@@ -2,7 +2,14 @@ import pandas as pd
 import streamlit as st
 
 from services.metadata import detect_metadata
-from services.library import list_sheets, save_sheet
+from services.library import (
+    list_sheets,
+    save_sheet,
+    download_sheet_pdf,
+    update_sheet_metadata,
+    replace_sheet_pdf,
+    delete_sheet,
+)
 from services.matcher import search_library
 from services.pdf_builder import build_dossier_pdf
 
@@ -397,17 +404,216 @@ with tab_library:
             st.session_state.pop("manual_results", None)
 
     st.divider()
-    st.subheader("Bibliothèque existante")
+    st.subheader("Gérer la bibliothèque")
+
     try:
         sheets = list_sheets()
-        st.caption(f"{len(sheets)} fiche(s) actuellement enregistrée(s).")
-        if not sheets:
-            st.caption("Bibliothèque vide.")
-        for sheet in sheets:
-            st.write(
-                f"**{sheet['product_name']}**"
-                + (f" — {sheet.get('brand')}" if sheet.get("brand") else "")
-                + f" — {sheet['original_filename']}"
-            )
     except Exception as exc:
-        st.caption(f"Bibliothèque indisponible : {exc}")
+        sheets = []
+        st.error(f"Bibliothèque indisponible : {exc}")
+
+    if sheets:
+        st.caption(f"{len(sheets)} fiche(s) actuellement enregistrée(s).")
+
+        search = st.text_input(
+            "Rechercher une fiche",
+            placeholder="Nom du produit, marque, référence...",
+            key="library_search",
+        )
+
+        brands = sorted({
+            (sheet.get("brand") or "").strip()
+            for sheet in sheets
+            if (sheet.get("brand") or "").strip()
+        })
+        categories = sorted({
+            (sheet.get("category") or "").strip()
+            for sheet in sheets
+            if (sheet.get("category") or "").strip()
+        })
+
+        c_brand, c_category = st.columns(2)
+        with c_brand:
+            brand_filter = st.selectbox(
+                "Marque",
+                ["Toutes"] + brands,
+                key="library_brand_filter",
+            )
+        with c_category:
+            category_filter = st.selectbox(
+                "Catégorie",
+                ["Toutes"] + categories,
+                key="library_category_filter",
+            )
+
+        filtered = []
+        needle = search.strip().lower()
+
+        for sheet in sheets:
+            haystack = " ".join([
+                sheet.get("product_name", "") or "",
+                sheet.get("brand", "") or "",
+                sheet.get("reference", "") or "",
+                sheet.get("category", "") or "",
+                sheet.get("original_filename", "") or "",
+                " ".join(sheet.get("aliases") or []),
+            ]).lower()
+
+            if needle and needle not in haystack:
+                continue
+            if brand_filter != "Toutes" and sheet.get("brand") != brand_filter:
+                continue
+            if category_filter != "Toutes" and sheet.get("category") != category_filter:
+                continue
+
+            filtered.append(sheet)
+
+        st.caption(f"{len(filtered)} fiche(s) affichée(s).")
+
+        for sheet in filtered:
+            sheet_id = sheet["id"]
+            title = sheet.get("product_name") or sheet.get("original_filename") or "Fiche technique"
+            brand = sheet.get("brand") or "Sans marque"
+
+            with st.expander(f"{title} — {brand}"):
+                st.caption(
+                    f"Fichier : {sheet.get('original_filename', '')}"
+                    + (
+                        f" — Référence : {sheet.get('reference')}"
+                        if sheet.get("reference")
+                        else ""
+                    )
+                )
+
+                c_preview, c_download = st.columns(2)
+
+                with c_preview:
+                    if st.button("Afficher la fiche", key=f"preview-{sheet_id}"):
+                        st.session_state["preview_sheet_id"] = sheet_id
+
+                with c_download:
+                    try:
+                        pdf_bytes = download_sheet_pdf(sheet_id)
+                        st.download_button(
+                            "Télécharger le PDF original",
+                            data=pdf_bytes,
+                            file_name=sheet.get("original_filename") or "fiche.pdf",
+                            mime="application/pdf",
+                            key=f"download-{sheet_id}",
+                            use_container_width=True,
+                        )
+                    except Exception as exc:
+                        st.error(f"PDF indisponible : {exc}")
+
+                if st.session_state.get("preview_sheet_id") == sheet_id:
+                    try:
+                        pdf_bytes = download_sheet_pdf(sheet_id)
+                        st.markdown("**Aperçu**")
+                        if hasattr(st, "pdf"):
+                            st.pdf(pdf_bytes, height=700)
+                        else:
+                            st.info(
+                                "L'aperçu PDF intégré n'est pas disponible sur cette version. "
+                                "Utilise le bouton de téléchargement ci-dessus."
+                            )
+                    except Exception as exc:
+                        st.error(f"Aperçu impossible : {exc}")
+
+                st.markdown("**Modifier les informations**")
+                edit_product = st.text_input(
+                    "Nom du produit",
+                    value=sheet.get("product_name") or "",
+                    key=f"edit-product-{sheet_id}",
+                )
+                e1, e2 = st.columns(2)
+                with e1:
+                    edit_brand = st.text_input(
+                        "Marque",
+                        value=sheet.get("brand") or "",
+                        key=f"edit-brand-{sheet_id}",
+                    )
+                    edit_reference = st.text_input(
+                        "Référence",
+                        value=sheet.get("reference") or "",
+                        key=f"edit-reference-{sheet_id}",
+                    )
+                with e2:
+                    edit_category = st.text_input(
+                        "Catégorie",
+                        value=sheet.get("category") or "",
+                        key=f"edit-category-{sheet_id}",
+                    )
+                    edit_version = st.text_input(
+                        "Version / date",
+                        value=sheet.get("version_label") or "",
+                        key=f"edit-version-{sheet_id}",
+                    )
+
+                edit_aliases = st.text_input(
+                    "Alias",
+                    value=", ".join(sheet.get("aliases") or []),
+                    key=f"edit-aliases-{sheet_id}",
+                )
+
+                if st.button("Enregistrer les modifications", key=f"save-edit-{sheet_id}"):
+                    try:
+                        update_sheet_metadata(
+                            sheet_id,
+                            {
+                                "product_name": edit_product,
+                                "brand": edit_brand,
+                                "reference": edit_reference,
+                                "category": edit_category,
+                                "version_label": edit_version,
+                                "aliases": [
+                                    a.strip()
+                                    for a in edit_aliases.split(",")
+                                    if a.strip()
+                                ],
+                            },
+                        )
+                        st.success("Fiche modifiée.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Modification impossible : {exc}")
+
+                st.markdown("**Remplacer le PDF**")
+                replacement = st.file_uploader(
+                    "Choisir le nouveau PDF",
+                    type=["pdf"],
+                    key=f"replace-upload-{sheet_id}",
+                )
+
+                if replacement is not None:
+                    if st.button("Remplacer cette fiche", key=f"replace-{sheet_id}"):
+                        try:
+                            replace_sheet_pdf(
+                                sheet_id,
+                                replacement.name,
+                                replacement.getvalue(),
+                            )
+                            st.success("PDF remplacé. L'ancien fichier a été retiré du stockage.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"Remplacement impossible : {exc}")
+
+                st.markdown("**Supprimer la fiche**")
+                confirm_delete = st.checkbox(
+                    "Je confirme la suppression de cette fiche",
+                    key=f"confirm-delete-{sheet_id}",
+                )
+                if st.button(
+                    "Supprimer définitivement",
+                    key=f"delete-{sheet_id}",
+                    disabled=not confirm_delete,
+                ):
+                    try:
+                        delete_sheet(sheet_id)
+                        if st.session_state.get("preview_sheet_id") == sheet_id:
+                            st.session_state.pop("preview_sheet_id", None)
+                        st.success("Fiche supprimée de la bibliothèque et du Storage.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Suppression impossible : {exc}")
+    else:
+        st.caption("Bibliothèque vide.")
