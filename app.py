@@ -1,6 +1,6 @@
 import pandas as pd
 import streamlit as st
-from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode
+from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, JsCode
 
 from services.metadata import detect_metadata
 from services.library import (
@@ -99,16 +99,36 @@ with tab_build:
         flex=1,
         minWidth=360,
     )
+    trash_renderer = JsCode("""
+        function(params) {
+            const button = document.createElement('button');
+            button.innerHTML = '🗑️';
+            button.title = 'Supprimer cette ligne';
+            button.style.border = 'none';
+            button.style.background = 'transparent';
+            button.style.cursor = 'pointer';
+            button.style.fontSize = '18px';
+            button.style.width = '100%';
+            button.style.height = '100%';
+            button.onclick = function(event) {
+                event.stopPropagation();
+                params.node.setDataValue('Supprimer', true);
+            };
+            return button;
+        }
+    """)
+
     gb.configure_column(
         "Supprimer",
-        header_name="✕",
-        editable=True,
-        width=70,
-        cellRenderer="agCheckboxCellRenderer",
-        cellEditor="agCheckboxCellEditor",
+        header_name="",
+        editable=False,
+        width=64,
+        cellRenderer=trash_renderer,
         suppressMenu=True,
         sortable=False,
         filter=False,
+        resizable=False,
+        pinned="right",
     )
     gb.configure_grid_options(
         rowDragManaged=True,
@@ -123,7 +143,7 @@ with tab_build:
         gridOptions=gb.build(),
         height=max(150, min(520, 42 * (len(editor_df) + 1))),
         fit_columns_on_grid_load=False,
-        allow_unsafe_jscode=False,
+        allow_unsafe_jscode=True,
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
         update_on=["cellValueChanged", "rowDragEnd"],
         key="manual_plan_grid",
@@ -149,7 +169,7 @@ with tab_build:
 
     st.caption(
         "Maintiens le clic sur une ligne puis fais-la glisser pour changer l'ordre. "
-        "La croix à droite permet de supprimer une ligne."
+        "La corbeille à droite supprime immédiatement la ligne."
     )
 
     st.markdown("**Ajouter rapidement une ligne**")
