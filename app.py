@@ -1,6 +1,6 @@
 import pandas as pd
 import streamlit as st
-from streamlit_sortables import sort_items
+from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode
 
 from services.metadata import detect_metadata
 from services.library import (
@@ -79,34 +79,78 @@ with tab_build:
             ]
         )
 
-    plan = st.data_editor(
-        normalize_plan(st.session_state.manual_plan),
-        hide_index=True,
-        use_container_width=True,
-        num_rows="dynamic",
-        column_config={
-            "Type": st.column_config.SelectboxColumn(
-                "Type",
-                options=["Titre principal", "Sous-titre", "FT"],
-                required=True,
-                width="medium",
-            ),
-            "Désignation": st.column_config.TextColumn(
-                "Titre ou nom de la fiche technique",
-                required=True,
-                width="large",
-            ),
-        },
-        key="manual_plan_editor",
+    editor_df = normalize_plan(st.session_state.manual_plan).copy()
+    editor_df["Supprimer"] = False
+
+    gb = GridOptionsBuilder.from_dataframe(editor_df)
+    gb.configure_column(
+        "Type",
+        header_name="Type",
+        editable=True,
+        rowDrag=True,
+        width=220,
+        cellEditor="agSelectCellEditor",
+        cellEditorParams={"values": ["Titre principal", "Sous-titre", "FT"]},
     )
+    gb.configure_column(
+        "Désignation",
+        header_name="Titre ou nom de la fiche technique",
+        editable=True,
+        flex=1,
+        minWidth=360,
+    )
+    gb.configure_column(
+        "Supprimer",
+        header_name="✕",
+        editable=True,
+        width=70,
+        cellRenderer="agCheckboxCellRenderer",
+        cellEditor="agCheckboxCellEditor",
+        suppressMenu=True,
+        sortable=False,
+        filter=False,
+    )
+    gb.configure_grid_options(
+        rowDragManaged=True,
+        rowDragEntireRow=True,
+        animateRows=True,
+        suppressMoveWhenRowDragging=False,
+        stopEditingWhenCellsLoseFocus=True,
+    )
+
+    grid_response = AgGrid(
+        editor_df,
+        gridOptions=gb.build(),
+        height=max(150, min(520, 42 * (len(editor_df) + 1))),
+        fit_columns_on_grid_load=False,
+        allow_unsafe_jscode=False,
+        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+        update_on=["cellValueChanged", "rowDragEnd"],
+        key="manual_plan_grid",
+        theme="streamlit",
+    )
+
+    grid_data = pd.DataFrame(grid_response["data"])
+    if "Supprimer" not in grid_data.columns:
+        grid_data["Supprimer"] = False
+
+    rows_to_delete = grid_data["Supprimer"].fillna(False).astype(bool)
+    if rows_to_delete.any():
+        cleaned = grid_data.loc[~rows_to_delete, ["Type", "Désignation"]].reset_index(drop=True)
+        if cleaned.empty:
+            cleaned = pd.DataFrame([{"Type": "Titre principal", "Désignation": ""}])
+        set_plan_and_rerun(cleaned)
+
+    current_plan = normalize_plan(grid_data[["Type", "Désignation"]])
+
+    if not current_plan.equals(normalize_plan(st.session_state.manual_plan)):
+        st.session_state.manual_plan = current_plan.copy()
+        clear_results()
 
     st.caption(
-        "Titre principal = grand titre en majuscules. "
-        "Sous-titre = titre intermédiaire plus petit. "
-        "FT = PDF fabricant original."
+        "Maintiens le clic sur une ligne puis fais-la glisser pour changer l'ordre. "
+        "La croix à droite permet de supprimer une ligne."
     )
-
-    current_plan = normalize_plan(plan)
 
     st.markdown("**Ajouter rapidement une ligne**")
     add_main, add_sub, add_ft = st.columns(3)
@@ -119,57 +163,6 @@ with tab_build:
     with add_ft:
         if st.button("+ FT", use_container_width=True):
             add_row(current_plan, "FT")
-
-    if len(current_plan):
-        st.markdown("**Ordre des lignes**")
-        st.caption("Maintiens le clic sur une ligne puis fais-la glisser à l'endroit voulu.")
-
-        sortable_items = []
-        for idx, row in current_plan.iterrows():
-            label = row["Désignation"].strip() or "(ligne vide)"
-            sortable_items.append(
-                f"{idx + 1:04d} · {row['Type']} — {label}"
-            )
-
-        sortable_style = """
-        .sortable-component {
-            padding: 0;
-        }
-        .sortable-item {
-            background: white;
-            border: 1px solid rgba(49, 51, 63, 0.18);
-            border-radius: 8px;
-            padding: 10px 12px;
-            margin: 6px 0;
-            cursor: grab;
-            font-size: 0.95rem;
-        }
-        .sortable-item:active {
-            cursor: grabbing;
-        }
-        """
-
-        reordered_items = sort_items(
-            sortable_items,
-            custom_style=sortable_style,
-        )
-
-        original_order = [int(item.split(" · ", 1)[0]) - 1 for item in sortable_items]
-        new_order = [int(item.split(" · ", 1)[0]) - 1 for item in reordered_items]
-
-        if new_order != original_order:
-            reordered_plan = current_plan.iloc[new_order].reset_index(drop=True)
-            set_plan_and_rerun(reordered_plan)
-
-        st.caption("Supprimer une ligne")
-        for idx, row in current_plan.iterrows():
-            label = row["Désignation"].strip() or "(ligne vide)"
-            c_text, c_delete = st.columns([8, 1])
-            with c_text:
-                st.write(f"{idx + 1}. **{row['Type']}** — {label}")
-            with c_delete:
-                if st.button("✕", key=f"del-{idx}", help="Supprimer cette ligne"):
-                    delete_row(current_plan, idx)
 
     if st.button("Rechercher les fiches techniques", type="primary"):
         clean_plan = normalize_plan(current_plan)
