@@ -65,3 +65,28 @@ def save_sheet(metadata: dict, filename: str, pdf_bytes: bytes):
         supabase.table("technical_sheet_aliases").insert(alias_rows).execute()
 
     return row
+
+
+def get_sheet(sheet_id: str):
+    supabase = get_supabase()
+    result = (
+        supabase.table("technical_sheets")
+        .select("*")
+        .eq("id", sheet_id)
+        .single()
+        .execute()
+    )
+    return result.data
+
+
+def download_sheet_pdf(sheet_id: str) -> bytes:
+    sheet = get_sheet(sheet_id)
+    if not sheet:
+        raise ValueError("Fiche technique introuvable dans la bibliothèque.")
+
+    storage_path = sheet.get("storage_path")
+    if not storage_path:
+        raise ValueError("Le chemin du PDF de la fiche est manquant.")
+
+    supabase = get_supabase()
+    return supabase.storage.from_(BUCKET).download(storage_path)
