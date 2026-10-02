@@ -1,8 +1,10 @@
+import pandas as pd
 import streamlit as st
 from services.document_reader import read_uploaded_document
 from services.metadata import detect_metadata
 from services.library import list_sheets, save_sheet
 from services.matcher import search_library
+from services.description_analyzer import analyze_description
 
 st.set_page_config(page_title="Fiches techniques", page_icon="📄", layout="centered")
 
@@ -26,33 +28,74 @@ with tab_build:
             with st.expander("Voir le texte extrait"):
                 st.text_area("Texte", text, height=280, label_visibility="collapsed")
 
-            st.subheader("2. Recherche test")
-            query = st.text_input(
-                "Produit à rechercher",
-                placeholder="Ex. Sarlon Primeo 33",
+            st.subheader("2. Analyser l'ordre du dossier")
+            st.write(
+                "Le système compare chaque ligne du descriptif avec la bibliothèque. "
+                "Rien n'est ajouté au dossier final sans passer par cette liste de validation."
             )
-            if query:
-                try:
-                    results = search_library(query, list_sheets())
-                    if results:
-                        for score, sheet in results:
-                            status = "Très probable" if score >= 90 else "À vérifier"
-                            st.write(
-                                f"**{sheet['product_name']}**"
-                                + (f" — {sheet.get('brand')}" if sheet.get("brand") else "")
-                                + f" — {score}% — {status}"
-                            )
-                    else:
-                        st.warning("Aucune fiche dans la bibliothèque.")
-                except Exception:
-                    st.warning("La bibliothèque Supabase n'est pas encore connectée.")
+
+            if st.button("Analyser le descriptif", type="primary"):
+                sheets = list_sheets()
+                st.session_state["description_analysis"] = analyze_description(text, sheets)
+
+            if "description_analysis" in st.session_state:
+                rows = st.session_state["description_analysis"]
+                display_rows = [
+                    {k: v for k, v in row.items() if k != "technical_sheet_id"}
+                    for row in rows
+                ]
+                df = pd.DataFrame(display_rows)
+
+                edited = st.data_editor(
+                    df,
+                    hide_index=True,
+                    use_container_width=True,
+                    disabled=[
+                        "Ordre",
+                        "Texte du descriptif",
+                        "Fiche proposée",
+                        "Marque",
+                        "Score",
+                        "Statut",
+                    ],
+                    column_config={
+                        "Type": st.column_config.SelectboxColumn(
+                            "Type",
+                            options=["Titre", "Produit", "À vérifier", "Ignorer"],
+                            required=True,
+                        ),
+                        "Score": st.column_config.NumberColumn(
+                            "Score",
+                            format="%d %%",
+                        ),
+                    },
+                    key="analysis_editor",
+                )
+
+                st.caption(
+                    "Tu peux corriger uniquement la colonne Type. "
+                    "Un produit incertain reste signalé : le système ne choisit pas une fiche au hasard."
+                )
+
+                unresolved = edited[
+                    (edited["Type"] == "Produit")
+                    & (
+                        (edited["Fiche proposée"].astype(str).str.strip() == "")
+                        | (edited["Score"] < 70)
+                    )
+                ]
+
+                if len(unresolved):
+                    st.warning(
+                        f"{len(unresolved)} produit(s) n'ont pas encore de fiche suffisamment fiable."
+                    )
+                else:
+                    st.success(
+                        "La structure est prête pour l'étape suivante : validation précise des fiches et génération."
+                    )
+
         except Exception as exc:
             st.error(str(exc))
-
-    st.info(
-        "L'analyse automatique complète de la liste des titres et produits sera ajoutée "
-        "après validation sur un descriptif réel."
-    )
 
 with tab_library:
     st.subheader("Importer des fiches techniques")
@@ -72,7 +115,7 @@ with tab_library:
         if "detected_sheets" not in st.session_state:
             st.session_state.detected_sheets = {}
 
-        for i, pdf in enumerate(uploads):
+        for pdf in uploads:
             key = f"{pdf.name}-{pdf.size}"
             if key not in st.session_state.detected_sheets:
                 st.session_state.detected_sheets[key] = detect_metadata(
@@ -127,10 +170,7 @@ with tab_library:
                         save_sheet(metadata, pdf.name, pdf.getvalue())
                         st.success("Fiche ajoutée. Le PDF original a été stocké sans modification.")
                     except Exception as exc:
-                        st.error(
-                            "Impossible d'ajouter la fiche pour le moment. "
-                            f"Supabase doit d'abord être configuré. Détail : {exc}"
-                        )
+                        st.error(f"Impossible d'ajouter la fiche : {exc}")
 
     st.divider()
     st.subheader("Bibliothèque existante")
@@ -144,5 +184,5 @@ with tab_library:
                 + (f" — {sheet.get('brand')}" if sheet.get("brand") else "")
                 + f" — {sheet['original_filename']}"
             )
-    except Exception:
-        st.caption("La connexion Supabase sera configurée à l'étape suivante.")
+    except Exception as exc:
+        st.caption(f"Bibliothèque indisponible : {exc}")
