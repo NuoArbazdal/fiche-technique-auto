@@ -4,6 +4,7 @@ import streamlit as st
 from services.metadata import detect_metadata
 from services.library import list_sheets, save_sheet
 from services.matcher import search_library
+from services.pdf_builder import build_dossier_pdf
 
 st.set_page_config(page_title="Fiches techniques", page_icon="📄", layout="centered")
 
@@ -14,16 +15,19 @@ st.caption("Créer un dossier à partir de fiches fabricants originales, sans le
 def normalize_plan(df: pd.DataFrame) -> pd.DataFrame:
     work = df.copy()
     if "Type" not in work.columns:
-        work["Type"] = "Titre"
+        work["Type"] = "Titre principal"
     if "Désignation" not in work.columns:
         work["Désignation"] = ""
-    work["Type"] = work["Type"].fillna("Titre").astype(str)
+
+    work["Type"] = work["Type"].fillna("Titre principal").astype(str)
+    work["Type"] = work["Type"].replace({"Titre": "Titre principal"})
     work["Désignation"] = work["Désignation"].fillna("").astype(str)
     return work[["Type", "Désignation"]].reset_index(drop=True)
 
 
 def clear_results():
     st.session_state.pop("manual_results", None)
+    st.session_state.pop("generated_pdf", None)
 
 
 def set_plan_and_rerun(df: pd.DataFrame):
@@ -52,7 +56,7 @@ def delete_row(df: pd.DataFrame, index: int):
     work = normalize_plan(df)
     work = work.drop(index=index).reset_index(drop=True)
     if work.empty:
-        work = pd.DataFrame([{"Type": "Titre", "Désignation": ""}])
+        work = pd.DataFrame([{"Type": "Titre principal", "Désignation": ""}])
     set_plan_and_rerun(work)
 
 
@@ -61,14 +65,15 @@ tab_build, tab_library = st.tabs(["Créer un dossier", "Bibliothèque"])
 with tab_build:
     st.subheader("1. Saisir le contenu du dossier")
     st.write(
-        "Ajoute directement les titres et les fiches techniques dans l'ordre souhaité. "
-        "Une ligne = une page de titre ou une fiche technique."
+        "Ajoute les titres et les fiches techniques dans l'ordre souhaité. "
+        "La page d'accueil du dossier sera ajoutée plus tard."
     )
 
     if "manual_plan" not in st.session_state:
         st.session_state.manual_plan = pd.DataFrame(
             [
-                {"Type": "Titre", "Désignation": ""},
+                {"Type": "Titre principal", "Désignation": ""},
+                {"Type": "Sous-titre", "Désignation": ""},
                 {"Type": "FT", "Désignation": ""},
             ]
         )
@@ -81,9 +86,9 @@ with tab_build:
         column_config={
             "Type": st.column_config.SelectboxColumn(
                 "Type",
-                options=["Titre", "FT"],
+                options=["Titre principal", "Sous-titre", "FT"],
                 required=True,
-                width="small",
+                width="medium",
             ),
             "Désignation": st.column_config.TextColumn(
                 "Titre ou nom de la fiche technique",
@@ -95,8 +100,9 @@ with tab_build:
     )
 
     st.caption(
-        "L'ordre des lignes sera exactement l'ordre du futur PDF. "
-        "Tu peux aussi déplacer, dupliquer ou supprimer les lignes ci-dessous."
+        "Titre principal = grand titre en majuscules. "
+        "Sous-titre = titre intermédiaire plus petit. "
+        "FT = PDF fabricant original."
     )
 
     current_plan = normalize_plan(plan)
@@ -163,6 +169,7 @@ with tab_build:
                         item["Marque"] = sheet.get("brand", "") or ""
                         item["Score"] = int(score)
                         item["technical_sheet_id"] = sheet.get("id")
+
                         if score >= 90:
                             item["Statut"] = "Trouvée"
                         elif score >= 70:
@@ -178,14 +185,15 @@ with tab_build:
 
             st.session_state["manual_results"] = results
             st.session_state["manual_plan"] = clean_plan[["Type", "Désignation"]]
+            st.session_state.pop("generated_pdf", None)
 
     if "manual_results" in st.session_state:
         st.subheader("2. Vérifier les correspondances")
         results = st.session_state["manual_results"]
 
         for i, row in enumerate(results):
-            if row["Type"] == "Titre":
-                st.write(f"**{row['Ordre']}. TITRE** — {row['Désignation']}")
+            if row["Type"] in ("Titre principal", "Sous-titre"):
+                st.write(f"**{row['Ordre']}. {row['Type'].upper()}** — {row['Désignation']}")
                 continue
 
             st.markdown(f"**{row['Ordre']}. FT — {row['Désignation']}**")
@@ -259,18 +267,35 @@ with tab_build:
             st.warning(
                 f"{len(unresolved)} fiche(s) doivent encore être ajoutées ou sélectionnées."
             )
-        elif ft_rows:
+        else:
             st.success(
                 "Toutes les fiches techniques sont associées. "
-                "L'ordre est prêt pour la génération du PDF."
+                "Le dossier peut être généré."
             )
 
-            st.subheader("3. Génération du dossier")
-            st.info(
-                "La génération des pages de titre reste volontairement désactivée pour le moment. "
-                "Tu vas me fournir les fichiers modèles des pages de titre : le système les reproduira "
-                "à partir de ces modèles, sans inventer leur mise en page."
+            st.subheader("3. Générer le dossier PDF")
+            st.caption(
+                "Les pages de titre reprennent le principe de tes modèles : "
+                "page blanche, texte bleu centré et souligné. "
+                "La page d'accueil complète n'est pas encore incluse."
             )
+
+            if st.button("Générer le PDF final", type="primary"):
+                try:
+                    with st.spinner("Création du dossier..."):
+                        st.session_state["generated_pdf"] = build_dossier_pdf(results)
+                    st.success("PDF généré.")
+                except Exception as exc:
+                    st.error(f"Impossible de générer le PDF : {exc}")
+
+            if st.session_state.get("generated_pdf"):
+                st.download_button(
+                    "Télécharger le dossier PDF",
+                    data=st.session_state["generated_pdf"],
+                    file_name="dossier_fiches_techniques.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
 
 with tab_library:
     st.subheader("Importer des fiches techniques")
