@@ -212,3 +212,65 @@ def delete_sheet(sheet_id: str):
             supabase.storage.from_(BUCKET).remove([storage_path])
         except Exception:
             pass
+
+
+def find_duplicate(metadata: dict, filename: str, sheets: list[dict] | None = None):
+    """Retourne (niveau, fiche, raison) ou (None, None, None).
+
+    exact = doublon suffisamment sûr pour être ignoré automatiquement.
+    probable = nom très proche : on signale mais on n'écrase rien.
+    """
+    from rapidfuzz import fuzz
+
+    sheets = sheets if sheets is not None else list_sheets()
+    new_name = normalize_text(metadata.get("product_name") or "")
+    new_brand = normalize_text(metadata.get("brand") or "")
+    new_ref = normalize_text(metadata.get("reference") or "")
+    new_version = normalize_text(metadata.get("version_label") or "")
+    new_filename = normalize_text(Path(filename).name)
+
+    for sheet in sheets:
+        old_filename = normalize_text(sheet.get("original_filename") or "")
+        old_name = normalize_text(sheet.get("product_name") or "")
+        old_brand = normalize_text(sheet.get("brand") or "")
+        old_ref = normalize_text(sheet.get("reference") or "")
+        old_version = normalize_text(sheet.get("version_label") or "")
+
+        if new_filename and old_filename and new_filename == old_filename:
+            return "exact", sheet, "même nom de fichier"
+
+        if new_ref and old_ref and new_ref == old_ref:
+            if not new_brand or not old_brand or new_brand == old_brand:
+                if not (new_version and old_version and new_version != old_version):
+                    return "exact", sheet, "même référence produit"
+
+        if new_name and old_name and new_name == old_name:
+            if not new_brand or not old_brand or new_brand == old_brand:
+                if not (new_version and old_version and new_version != old_version):
+                    return "exact", sheet, "même produit"
+
+    best = None
+    best_score = 0
+
+    for sheet in sheets:
+        old_name = normalize_text(sheet.get("product_name") or "")
+        if not new_name or not old_name:
+            continue
+
+        old_brand = normalize_text(sheet.get("brand") or "")
+        if new_brand and old_brand and new_brand != old_brand:
+            continue
+
+        score = max(
+            fuzz.token_set_ratio(new_name, old_name),
+            fuzz.WRatio(new_name, old_name),
+        )
+
+        if score > best_score:
+            best_score = score
+            best = sheet
+
+    if best is not None and best_score >= 96:
+        return "probable", best, f"nom très proche ({int(best_score)} %)"
+
+    return None, None, None
