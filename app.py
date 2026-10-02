@@ -81,6 +81,7 @@ with tab_build:
 
     editor_df = normalize_plan(st.session_state.manual_plan).copy()
     editor_df["Supprimer"] = "🗑️"
+    editor_df["_delete"] = False
 
     gb = GridOptionsBuilder.from_dataframe(editor_df)
     gb.configure_column(
@@ -102,7 +103,7 @@ with tab_build:
     delete_click = JsCode("""
         function(params) {
             if (params.colDef.field === 'Supprimer') {
-                params.node.setDataValue('Supprimer', 'DELETE');
+                params.node.setDataValue('_delete', true);
             }
         }
     """)
@@ -118,6 +119,11 @@ with tab_build:
         resizable=False,
         pinned="right",
         cellStyle={"cursor": "pointer", "textAlign": "center", "fontSize": "18px"},
+    )
+    gb.configure_column(
+        "_delete",
+        hide=True,
+        editable=False,
     )
     gb.configure_grid_options(
         rowDragManaged=True,
@@ -135,16 +141,16 @@ with tab_build:
         fit_columns_on_grid_load=False,
         allow_unsafe_jscode=True,
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-        update_on=["cellValueChanged", "rowDragEnd"],
+        update_on=["cellValueChanged", "rowDragEnd", "cellClicked"],
         key="manual_plan_grid",
         theme="streamlit",
     )
 
     grid_data = pd.DataFrame(grid_response["data"])
-    if "Supprimer" not in grid_data.columns:
-        grid_data["Supprimer"] = "🗑️"
+    if "_delete" not in grid_data.columns:
+        grid_data["_delete"] = False
 
-    rows_to_delete = grid_data["Supprimer"].astype(str).eq("DELETE")
+    rows_to_delete = grid_data["_delete"].fillna(False).astype(bool)
     if rows_to_delete.any():
         cleaned = grid_data.loc[~rows_to_delete, ["Type", "Désignation"]].reset_index(drop=True)
         if cleaned.empty:
