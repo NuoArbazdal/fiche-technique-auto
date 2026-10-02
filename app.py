@@ -80,7 +80,7 @@ with tab_build:
         )
 
     editor_df = normalize_plan(st.session_state.manual_plan).copy()
-    editor_df["Supprimer"] = False
+    editor_df["Supprimer"] = "🗑️"
 
     gb = GridOptionsBuilder.from_dataframe(editor_df)
     gb.configure_column(
@@ -99,22 +99,11 @@ with tab_build:
         flex=1,
         minWidth=360,
     )
-    trash_renderer = JsCode("""
+    delete_click = JsCode("""
         function(params) {
-            const button = document.createElement('button');
-            button.innerHTML = '🗑️';
-            button.title = 'Supprimer cette ligne';
-            button.style.border = 'none';
-            button.style.background = 'transparent';
-            button.style.cursor = 'pointer';
-            button.style.fontSize = '18px';
-            button.style.width = '100%';
-            button.style.height = '100%';
-            button.onclick = function(event) {
-                event.stopPropagation();
-                params.node.setDataValue('Supprimer', true);
-            };
-            return button;
+            if (params.colDef.field === 'Supprimer') {
+                params.node.setDataValue('Supprimer', 'DELETE');
+            }
         }
     """)
 
@@ -123,12 +112,12 @@ with tab_build:
         header_name="",
         editable=False,
         width=64,
-        cellRenderer=trash_renderer,
         suppressMenu=True,
         sortable=False,
         filter=False,
         resizable=False,
         pinned="right",
+        cellStyle={"cursor": "pointer", "textAlign": "center", "fontSize": "18px"},
     )
     gb.configure_grid_options(
         rowDragManaged=True,
@@ -136,6 +125,7 @@ with tab_build:
         animateRows=True,
         suppressMoveWhenRowDragging=False,
         stopEditingWhenCellsLoseFocus=True,
+        onCellClicked=delete_click,
     )
 
     grid_response = AgGrid(
@@ -152,9 +142,9 @@ with tab_build:
 
     grid_data = pd.DataFrame(grid_response["data"])
     if "Supprimer" not in grid_data.columns:
-        grid_data["Supprimer"] = False
+        grid_data["Supprimer"] = "🗑️"
 
-    rows_to_delete = grid_data["Supprimer"].fillna(False).astype(bool)
+    rows_to_delete = grid_data["Supprimer"].astype(str).eq("DELETE")
     if rows_to_delete.any():
         cleaned = grid_data.loc[~rows_to_delete, ["Type", "Désignation"]].reset_index(drop=True)
         if cleaned.empty:
