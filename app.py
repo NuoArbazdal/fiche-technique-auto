@@ -300,8 +300,8 @@ with tab_build:
 with tab_library:
     st.subheader("Importer des fiches techniques")
     st.write(
-        "Dépose un ou plusieurs PDF. Le système remplit automatiquement les informations "
-        "à partir du fichier et du contenu lisible du PDF. Tu ne corriges que si nécessaire."
+        "Dépose plusieurs PDF en une fois. Le système analyse chaque fichier puis "
+        "les ajoute tous automatiquement à la bibliothèque en un seul clic."
     )
 
     uploads = st.file_uploader(
@@ -312,70 +312,87 @@ with tab_library:
     )
 
     if uploads:
-        if "detected_sheets" not in st.session_state:
-            st.session_state.detected_sheets = {}
+        total_size = sum(pdf.size for pdf in uploads)
+        st.caption(
+            f"{len(uploads)} fichier(s) sélectionné(s) — "
+            f"{total_size / (1024 * 1024):.1f} Mo au total"
+        )
 
-        for pdf in uploads:
-            key = f"{pdf.name}-{pdf.size}"
-            if key not in st.session_state.detected_sheets:
-                st.session_state.detected_sheets[key] = detect_metadata(
-                    pdf.name,
-                    pdf.getvalue(),
+        if st.button(
+            f"Importer automatiquement les {len(uploads)} fiche(s)",
+            type="primary",
+            use_container_width=True,
+        ):
+            progress = st.progress(0)
+            status = st.empty()
+            imported = []
+            skipped = []
+            failed = []
+
+            for index, pdf in enumerate(uploads, start=1):
+                status.write(f"Import de **{pdf.name}** ({index}/{len(uploads)})...")
+
+                try:
+                    metadata = detect_metadata(pdf.name, pdf.getvalue())
+                    save_sheet(metadata, pdf.name, pdf.getvalue())
+                    imported.append({
+                        "Fichier": pdf.name,
+                        "Produit détecté": metadata.get("product_name", ""),
+                        "Marque": metadata.get("brand", ""),
+                    })
+                except Exception as exc:
+                    message = str(exc)
+                    lower = message.lower()
+
+                    if (
+                        "duplicate" in lower
+                        or "already exists" in lower
+                        or "resource already exists" in lower
+                        or "409" in lower
+                    ):
+                        skipped.append(pdf.name)
+                    else:
+                        failed.append((pdf.name, message))
+
+                progress.progress(index / len(uploads))
+
+            status.empty()
+            progress.empty()
+
+            if imported:
+                st.success(
+                    f"{len(imported)} fiche(s) ajoutée(s) automatiquement à la bibliothèque."
+                )
+                st.dataframe(
+                    pd.DataFrame(imported),
+                    hide_index=True,
+                    use_container_width=True,
                 )
 
-            metadata = st.session_state.detected_sheets[key]
-
-            with st.expander(f"{pdf.name}", expanded=True):
-                metadata["product_name"] = st.text_input(
-                    "Produit détecté",
-                    value=metadata["product_name"],
-                    key=f"name-{key}",
+            if skipped:
+                st.info(
+                    f"{len(skipped)} fichier(s) déjà présent(s) ont été ignoré(s)."
                 )
-                c1, c2 = st.columns(2)
-                with c1:
-                    metadata["brand"] = st.text_input(
-                        "Marque détectée",
-                        value=metadata["brand"],
-                        key=f"brand-{key}",
-                    )
-                    metadata["reference"] = st.text_input(
-                        "Référence détectée",
-                        value=metadata["reference"],
-                        key=f"ref-{key}",
-                    )
-                with c2:
-                    metadata["category"] = st.text_input(
-                        "Catégorie détectée",
-                        value=metadata["category"],
-                        key=f"cat-{key}",
-                    )
-                    metadata["version_label"] = st.text_input(
-                        "Version / date",
-                        value=metadata["version_label"],
-                        key=f"version-{key}",
-                    )
+                with st.expander("Voir les fichiers ignorés"):
+                    for name in skipped:
+                        st.write(name)
 
-                aliases_value = ", ".join(metadata.get("aliases") or [])
-                aliases_text = st.text_input(
-                    "Alias proposés",
-                    value=aliases_value,
-                    key=f"aliases-{key}",
+            if failed:
+                st.warning(
+                    f"{len(failed)} fichier(s) n'ont pas pu être importé(s). "
+                    "Les autres fiches ont quand même été ajoutées."
                 )
-                metadata["aliases"] = [
-                    a.strip() for a in aliases_text.split(",") if a.strip()
-                ]
+                with st.expander("Voir les erreurs"):
+                    for name, message in failed:
+                        st.write(f"**{name}** — {message}")
 
-                if st.button("Ajouter cette fiche à la bibliothèque", key=f"save-{key}"):
-                    try:
-                        save_sheet(metadata, pdf.name, pdf.getvalue())
-                        st.success("Fiche ajoutée. Le PDF original a été stocké sans modification.")
-                    except Exception as exc:
-                        st.error(f"Impossible d'ajouter la fiche : {exc}")
+            st.session_state.pop("manual_results", None)
 
     st.divider()
     st.subheader("Bibliothèque existante")
     try:
         sheets = list_sheets()
+        st.caption(f"{len(sheets)} fiche(s) actuellement enregistrée(s).")
         if not sheets:
             st.caption("Bibliothèque vide.")
         for sheet in sheets:
