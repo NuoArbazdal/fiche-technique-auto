@@ -298,28 +298,36 @@ with tab_build:
                 )
 
 with tab_library:
-    st.subheader("Importer des fiches techniques")
+    st.subheader("Importer un dossier de fiches techniques")
     st.write(
-        "Dépose plusieurs PDF en une fois. Le système analyse chaque fichier puis "
-        "les ajoute tous automatiquement à la bibliothèque en un seul clic."
+        "Sélectionne directement le dossier complet sur ton PC. "
+        "Le site récupère automatiquement tous les PDF du dossier et de ses sous-dossiers."
     )
 
     uploads = st.file_uploader(
-        "Fiches PDF",
+        "Choisir le dossier contenant les fiches techniques",
         type=["pdf"],
-        accept_multiple_files=True,
+        accept_multiple_files="directory",
         key="library_uploads",
+        help="Le navigateur enverra tous les PDF présents dans le dossier sélectionné et ses sous-dossiers.",
     )
 
     if uploads:
         total_size = sum(pdf.size for pdf in uploads)
+        top_folders = sorted({
+            pdf.name.split("/")[0]
+            for pdf in uploads
+            if "/" in pdf.name
+        })
+        folder_label = ", ".join(top_folders[:3]) if top_folders else "dossier sélectionné"
+
         st.caption(
-            f"{len(uploads)} fichier(s) sélectionné(s) — "
+            f"{len(uploads)} PDF trouvés dans {folder_label} — "
             f"{total_size / (1024 * 1024):.1f} Mo au total"
         )
 
         if st.button(
-            f"Importer automatiquement les {len(uploads)} fiche(s)",
+            f"Importer tout le dossier ({len(uploads)} PDF)",
             type="primary",
             use_container_width=True,
         ):
