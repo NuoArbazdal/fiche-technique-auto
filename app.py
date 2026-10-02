@@ -41,7 +41,7 @@ def clear_results():
 
 def set_plan_and_rerun(df: pd.DataFrame):
     st.session_state.manual_plan = normalize_plan(df)
-    st.session_state.pop("manual_plan_editor", None)
+    st.session_state["manual_grid_version"] = st.session_state.get("manual_grid_version", 0) + 1
     clear_results()
     st.rerun()
 
@@ -80,6 +80,8 @@ with tab_build:
         )
 
     editor_df = normalize_plan(st.session_state.manual_plan).copy()
+    editor_df["_order"] = list(range(len(editor_df)))
+    editor_df["_delete"] = False
     editor_df["Supprimer"] = "🗑️"
 
     gb = GridOptionsBuilder.from_dataframe(editor_df)
@@ -99,6 +101,7 @@ with tab_build:
         flex=1,
         minWidth=360,
     )
+
     trash_renderer = JsCode("""
         function(params) {
             return '🗑️';
@@ -108,8 +111,18 @@ with tab_build:
     delete_click = JsCode("""
         function(params) {
             if (params.colDef.field === 'Supprimer') {
-                params.api.applyTransaction({ remove: [params.data] });
+                params.node.setDataValue('_delete', true);
             }
+        }
+    """)
+
+    row_drag_end = JsCode("""
+        function(params) {
+            let i = 0;
+            params.api.forEachNode(function(node) {
+                node.setDataValue('_order', i);
+                i += 1;
+            });
         }
     """)
 
@@ -126,6 +139,9 @@ with tab_build:
         pinned="right",
         cellStyle={"cursor": "pointer", "textAlign": "center", "fontSize": "18px"},
     )
+    gb.configure_column("_order", hide=True, editable=False)
+    gb.configure_column("_delete", hide=True, editable=False)
+
     gb.configure_grid_options(
         rowDragManaged=True,
         rowDragEntireRow=True,
@@ -133,7 +149,11 @@ with tab_build:
         suppressMoveWhenRowDragging=False,
         stopEditingWhenCellsLoseFocus=True,
         onCellClicked=delete_click,
+        onRowDragEnd=row_drag_end,
     )
+
+    if "manual_grid_version" not in st.session_state:
+        st.session_state.manual_grid_version = 0
 
     grid_response = AgGrid(
         editor_df,
@@ -142,17 +162,33 @@ with tab_build:
         fit_columns_on_grid_load=False,
         allow_unsafe_jscode=True,
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-        update_on=["cellValueChanged", "rowDragEnd", "cellClicked"],
-        key="manual_plan_grid",
+        update_on=["cellValueChanged", "rowDragEnd"],
+        key=f"manual_plan_grid_{st.session_state.manual_grid_version}",
         theme="streamlit",
     )
 
     grid_data = pd.DataFrame(grid_response["data"])
-    current_plan = normalize_plan(grid_data[["Type", "Désignation"]])
 
-    if current_plan.empty:
-        current_plan = pd.DataFrame([{"Type": "Titre principal", "Désignation": ""}])
-        set_plan_and_rerun(current_plan)
+    if "_delete" not in grid_data.columns:
+        grid_data["_delete"] = False
+    if "_order" not in grid_data.columns:
+        grid_data["_order"] = list(range(len(grid_data)))
+
+    rows_to_delete = grid_data["_delete"].fillna(False).astype(bool)
+    if rows_to_delete.any():
+        cleaned = (
+            grid_data.loc[~rows_to_delete]
+            .sort_values("_order")
+            [["Type", "Désignation"]]
+            .reset_index(drop=True)
+        )
+        if cleaned.empty:
+            cleaned = pd.DataFrame([{"Type": "Titre principal", "Désignation": ""}])
+        set_plan_and_rerun(cleaned)
+
+    current_plan = normalize_plan(
+        grid_data.sort_values("_order")[["Type", "Désignation"]]
+    )
 
     if not current_plan.equals(normalize_plan(st.session_state.manual_plan)):
         st.session_state.manual_plan = current_plan.copy()
