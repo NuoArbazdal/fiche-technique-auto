@@ -28,3 +28,9 @@ create index if not exists idx_technical_sheets_product_name
 
 create index if not exists idx_aliases_normalized
     on technical_sheet_aliases (normalized_alias);
+
+
+-- Stockage privé des PDF techniques originaux.
+insert into storage.buckets (id, name, public)
+values ('technical-sheets', 'technical-sheets', false)
+on conflict (id) do update set public = excluded.public;
