@@ -1,10 +1,8 @@
 import pandas as pd
 import streamlit as st
-from services.document_reader import read_uploaded_document
 from services.metadata import detect_metadata
 from services.library import list_sheets, save_sheet
 from services.matcher import search_library
-from services.description_analyzer import analyze_description
 
 st.set_page_config(page_title="Fiches techniques", page_icon="📄", layout="centered")
 
@@ -14,88 +12,133 @@ st.caption("Créer un dossier à partir de fiches fabricants originales, sans le
 tab_build, tab_library = st.tabs(["Créer un dossier", "Bibliothèque"])
 
 with tab_build:
-    st.subheader("1. Importer le descriptif")
-    source = st.file_uploader(
-        "PDF, Word ou TXT",
-        type=["pdf", "docx", "txt"],
-        key="source_doc",
+    st.subheader("1. Saisir le contenu du dossier")
+    st.write(
+        "Ajoute directement les titres et les fiches techniques dans l'ordre souhaité. "
+        "Une ligne = une page de titre ou une fiche technique."
     )
 
-    if source:
-        try:
-            text = read_uploaded_document(source)
-            st.success("Descriptif lu.")
-            with st.expander("Voir le texte extrait"):
-                st.text_area("Texte", text, height=280, label_visibility="collapsed")
+    if "manual_plan" not in st.session_state:
+        st.session_state.manual_plan = pd.DataFrame(
+            [
+                {"Type": "Titre", "Désignation": ""},
+                {"Type": "FT", "Désignation": ""},
+            ]
+        )
 
-            st.subheader("2. Analyser l'ordre du dossier")
-            st.write(
-                "Le système compare chaque ligne du descriptif avec la bibliothèque. "
-                "Rien n'est ajouté au dossier final sans passer par cette liste de validation."
-            )
+    plan = st.data_editor(
+        st.session_state.manual_plan,
+        hide_index=True,
+        use_container_width=True,
+        num_rows="dynamic",
+        column_config={
+            "Type": st.column_config.SelectboxColumn(
+                "Type",
+                options=["Titre", "FT"],
+                required=True,
+                width="small",
+            ),
+            "Désignation": st.column_config.TextColumn(
+                "Titre ou nom de la fiche technique",
+                required=True,
+                width="large",
+            ),
+        },
+        key="manual_plan_editor",
+    )
 
-            if st.button("Analyser le descriptif", type="primary"):
-                sheets = list_sheets()
-                st.session_state["description_analysis"] = analyze_description(text, sheets)
+    st.caption(
+        "L'ordre des lignes sera exactement l'ordre du futur PDF. "
+        "Tu peux ajouter ou supprimer des lignes directement dans le tableau."
+    )
 
-            if "description_analysis" in st.session_state:
-                rows = st.session_state["description_analysis"]
-                display_rows = [
-                    {k: v for k, v in row.items() if k != "technical_sheet_id"}
-                    for row in rows
-                ]
-                df = pd.DataFrame(display_rows)
+    if st.button("Rechercher les fiches techniques", type="primary"):
+        clean_plan = plan.copy()
+        clean_plan["Désignation"] = clean_plan["Désignation"].fillna("").astype(str).str.strip()
+        clean_plan = clean_plan[clean_plan["Désignation"] != ""].reset_index(drop=True)
 
-                edited = st.data_editor(
-                    df,
-                    hide_index=True,
-                    use_container_width=True,
-                    disabled=[
-                        "Ordre",
-                        "Texte du descriptif",
-                        "Fiche proposée",
-                        "Marque",
-                        "Score",
-                        "Statut",
-                    ],
-                    column_config={
-                        "Type": st.column_config.SelectboxColumn(
-                            "Type",
-                            options=["Titre", "Produit", "À vérifier", "Ignorer"],
-                            required=True,
-                        ),
-                        "Score": st.column_config.NumberColumn(
-                            "Score",
-                            format="%d %%",
-                        ),
-                    },
-                    key="analysis_editor",
-                )
+        if clean_plan.empty:
+            st.warning("Ajoute au moins un titre ou une fiche technique.")
+        else:
+            sheets = list_sheets()
+            results = []
 
-                st.caption(
-                    "Tu peux corriger uniquement la colonne Type. "
-                    "Un produit incertain reste signalé : le système ne choisit pas une fiche au hasard."
-                )
+            for idx, row in clean_plan.iterrows():
+                item = {
+                    "Ordre": idx + 1,
+                    "Type": row["Type"],
+                    "Désignation": row["Désignation"],
+                    "Fiche proposée": "",
+                    "Marque": "",
+                    "Score": "",
+                    "Statut": "",
+                    "technical_sheet_id": None,
+                }
 
-                unresolved = edited[
-                    (edited["Type"] == "Produit")
-                    & (
-                        (edited["Fiche proposée"].astype(str).str.strip() == "")
-                        | (edited["Score"] < 70)
-                    )
-                ]
-
-                if len(unresolved):
-                    st.warning(
-                        f"{len(unresolved)} produit(s) n'ont pas encore de fiche suffisamment fiable."
-                    )
+                if row["Type"] == "FT":
+                    matches = search_library(row["Désignation"], sheets, limit=1) if sheets else []
+                    if matches:
+                        score, sheet = matches[0]
+                        item["Fiche proposée"] = sheet.get("product_name", "")
+                        item["Marque"] = sheet.get("brand", "") or ""
+                        item["Score"] = score
+                        item["technical_sheet_id"] = sheet.get("id")
+                        if score >= 90:
+                            item["Statut"] = "Trouvée"
+                        elif score >= 70:
+                            item["Statut"] = "À confirmer"
+                        else:
+                            item["Statut"] = "Correspondance trop faible"
+                    else:
+                        item["Statut"] = "Introuvable"
                 else:
-                    st.success(
-                        "La structure est prête pour l'étape suivante : validation précise des fiches et génération."
-                    )
+                    item["Statut"] = "Page de titre"
 
-        except Exception as exc:
-            st.error(str(exc))
+                results.append(item)
+
+            st.session_state["manual_results"] = results
+            st.session_state["manual_plan"] = clean_plan[["Type", "Désignation"]]
+
+    if "manual_results" in st.session_state:
+        st.subheader("2. Vérifier les correspondances")
+
+        display = pd.DataFrame(
+            [
+                {k: v for k, v in row.items() if k != "technical_sheet_id"}
+                for row in st.session_state["manual_results"]
+            ]
+        )
+
+        st.dataframe(
+            display,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Score": st.column_config.NumberColumn(
+                    "Score",
+                    format="%d %%",
+                )
+            },
+        )
+
+        ft_rows = [
+            row for row in st.session_state["manual_results"]
+            if row["Type"] == "FT"
+        ]
+        unresolved = [
+            row for row in ft_rows
+            if row["Statut"] != "Trouvée"
+        ]
+
+        if unresolved:
+            st.warning(
+                f"{len(unresolved)} fiche(s) doivent encore être confirmées ou ajoutées à la bibliothèque."
+            )
+        elif ft_rows:
+            st.success(
+                "Toutes les fiches techniques ont été trouvées. "
+                "L'ordre est prêt pour la génération du PDF."
+            )
 
 with tab_library:
     st.subheader("Importer des fiches techniques")
