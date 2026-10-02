@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from streamlit_sortables import sort_items
 
 from services.metadata import detect_metadata
 from services.library import (
@@ -49,22 +50,6 @@ def add_row(df: pd.DataFrame, row_type: str):
     work = normalize_plan(df)
     rows = work.to_dict("records")
     rows.append({"Type": row_type, "Désignation": ""})
-    set_plan_and_rerun(pd.DataFrame(rows))
-
-
-def move_row(df: pd.DataFrame, index: int, direction: int):
-    work = normalize_plan(df)
-    target = index + direction
-    if 0 <= target < len(work):
-        rows = work.to_dict("records")
-        rows[index], rows[target] = rows[target], rows[index]
-        set_plan_and_rerun(pd.DataFrame(rows))
-
-
-def duplicate_row(df: pd.DataFrame, index: int):
-    work = normalize_plan(df)
-    rows = work.to_dict("records")
-    rows.insert(index + 1, dict(rows[index]))
     set_plan_and_rerun(pd.DataFrame(rows))
 
 
@@ -136,24 +121,55 @@ with tab_build:
             add_row(current_plan, "FT")
 
     if len(current_plan):
-        with st.expander("Réorganiser les lignes"):
-            for idx, row in current_plan.iterrows():
-                c_text, c_up, c_down, c_dup, c_del = st.columns([5, 1, 1, 1, 1])
-                with c_text:
-                    label = row["Désignation"].strip() or "(ligne vide)"
-                    st.write(f"**{idx + 1}. {row['Type']}** — {label}")
-                with c_up:
-                    if st.button("↑", key=f"up-{idx}", disabled=idx == 0):
-                        move_row(current_plan, idx, -1)
-                with c_down:
-                    if st.button("↓", key=f"down-{idx}", disabled=idx == len(current_plan) - 1):
-                        move_row(current_plan, idx, 1)
-                with c_dup:
-                    if st.button("⧉", key=f"dup-{idx}", help="Dupliquer"):
-                        duplicate_row(current_plan, idx)
-                with c_del:
-                    if st.button("✕", key=f"del-{idx}", help="Supprimer"):
-                        delete_row(current_plan, idx)
+        st.markdown("**Ordre des lignes**")
+        st.caption("Maintiens le clic sur une ligne puis fais-la glisser à l'endroit voulu.")
+
+        sortable_items = []
+        for idx, row in current_plan.iterrows():
+            label = row["Désignation"].strip() or "(ligne vide)"
+            sortable_items.append(
+                f"{idx + 1:04d} · {row['Type']} — {label}"
+            )
+
+        sortable_style = """
+        .sortable-component {
+            padding: 0;
+        }
+        .sortable-item {
+            background: white;
+            border: 1px solid rgba(49, 51, 63, 0.18);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin: 6px 0;
+            cursor: grab;
+            font-size: 0.95rem;
+        }
+        .sortable-item:active {
+            cursor: grabbing;
+        }
+        """
+
+        reordered_items = sort_items(
+            sortable_items,
+            custom_style=sortable_style,
+        )
+
+        original_order = [int(item.split(" · ", 1)[0]) - 1 for item in sortable_items]
+        new_order = [int(item.split(" · ", 1)[0]) - 1 for item in reordered_items]
+
+        if new_order != original_order:
+            reordered_plan = current_plan.iloc[new_order].reset_index(drop=True)
+            set_plan_and_rerun(reordered_plan)
+
+        st.caption("Supprimer une ligne")
+        for idx, row in current_plan.iterrows():
+            label = row["Désignation"].strip() or "(ligne vide)"
+            c_text, c_delete = st.columns([8, 1])
+            with c_text:
+                st.write(f"{idx + 1}. **{row['Type']}** — {label}")
+            with c_delete:
+                if st.button("✕", key=f"del-{idx}", help="Supprimer cette ligne"):
+                    delete_row(current_plan, idx)
 
     if st.button("Rechercher les fiches techniques", type="primary"):
         clean_plan = normalize_plan(current_plan)
