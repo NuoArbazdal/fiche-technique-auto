@@ -80,7 +80,7 @@ with tab_build:
         )
 
     editor_df = normalize_plan(st.session_state.manual_plan).copy()
-    editor_df["Supprimer"] = False
+    editor_df["Supprimer"] = "🗑️"
 
     gb = GridOptionsBuilder.from_dataframe(editor_df)
     gb.configure_column(
@@ -108,7 +108,7 @@ with tab_build:
     delete_click = JsCode("""
         function(params) {
             if (params.colDef.field === 'Supprimer') {
-                params.node.setDataValue('Supprimer', true);
+                params.api.applyTransaction({ remove: [params.data] });
             }
         }
     """)
@@ -142,23 +142,17 @@ with tab_build:
         fit_columns_on_grid_load=False,
         allow_unsafe_jscode=True,
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-        update_on=["cellValueChanged", "rowDragEnd"],
+        update_on=["cellValueChanged", "rowDragEnd", "cellClicked"],
         key="manual_plan_grid",
         theme="streamlit",
     )
 
     grid_data = pd.DataFrame(grid_response["data"])
-    if "Supprimer" not in grid_data.columns:
-        grid_data["Supprimer"] = False
-
-    rows_to_delete = grid_data["Supprimer"].fillna(False).astype(bool)
-    if rows_to_delete.any():
-        cleaned = grid_data.loc[~rows_to_delete, ["Type", "Désignation"]].reset_index(drop=True)
-        if cleaned.empty:
-            cleaned = pd.DataFrame([{"Type": "Titre principal", "Désignation": ""}])
-        set_plan_and_rerun(cleaned)
-
     current_plan = normalize_plan(grid_data[["Type", "Désignation"]])
+
+    if current_plan.empty:
+        current_plan = pd.DataFrame([{"Type": "Titre principal", "Désignation": ""}])
+        set_plan_and_rerun(current_plan)
 
     if not current_plan.equals(normalize_plan(st.session_state.manual_plan)):
         st.session_state.manual_plan = current_plan.copy()
