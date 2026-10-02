@@ -80,8 +80,7 @@ with tab_build:
         )
 
     editor_df = normalize_plan(st.session_state.manual_plan).copy()
-    editor_df["Supprimer"] = "🗑️"
-    editor_df["_delete"] = False
+    editor_df["Supprimer"] = False
 
     gb = GridOptionsBuilder.from_dataframe(editor_df)
     gb.configure_column(
@@ -100,10 +99,16 @@ with tab_build:
         flex=1,
         minWidth=360,
     )
+    trash_renderer = JsCode("""
+        function(params) {
+            return '🗑️';
+        }
+    """)
+
     delete_click = JsCode("""
         function(params) {
             if (params.colDef.field === 'Supprimer') {
-                params.node.setDataValue('_delete', true);
+                params.node.setDataValue('Supprimer', true);
             }
         }
     """)
@@ -113,17 +118,13 @@ with tab_build:
         header_name="",
         editable=False,
         width=64,
+        cellRenderer=trash_renderer,
         suppressMenu=True,
         sortable=False,
         filter=False,
         resizable=False,
         pinned="right",
         cellStyle={"cursor": "pointer", "textAlign": "center", "fontSize": "18px"},
-    )
-    gb.configure_column(
-        "_delete",
-        hide=True,
-        editable=False,
     )
     gb.configure_grid_options(
         rowDragManaged=True,
@@ -141,16 +142,16 @@ with tab_build:
         fit_columns_on_grid_load=False,
         allow_unsafe_jscode=True,
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-        update_on=["cellValueChanged", "rowDragEnd", "cellClicked"],
+        update_on=["cellValueChanged", "rowDragEnd"],
         key="manual_plan_grid",
         theme="streamlit",
     )
 
     grid_data = pd.DataFrame(grid_response["data"])
-    if "_delete" not in grid_data.columns:
-        grid_data["_delete"] = False
+    if "Supprimer" not in grid_data.columns:
+        grid_data["Supprimer"] = False
 
-    rows_to_delete = grid_data["_delete"].fillna(False).astype(bool)
+    rows_to_delete = grid_data["Supprimer"].fillna(False).astype(bool)
     if rows_to_delete.any():
         cleaned = grid_data.loc[~rows_to_delete, ["Type", "Désignation"]].reset_index(drop=True)
         if cleaned.empty:
