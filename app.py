@@ -9,6 +9,7 @@ from services.library import (
     update_sheet_metadata,
     replace_sheet_pdf,
     delete_sheet,
+    find_duplicate,
 )
 from services.matcher import search_library
 from services.pdf_builder import build_dossier_pdf
@@ -39,8 +40,16 @@ def clear_results():
 
 def set_plan_and_rerun(df: pd.DataFrame):
     st.session_state.manual_plan = normalize_plan(df)
+    st.session_state.pop("manual_plan_editor", None)
     clear_results()
     st.rerun()
+
+
+def add_row(df: pd.DataFrame, row_type: str):
+    work = normalize_plan(df)
+    rows = work.to_dict("records")
+    rows.append({"Type": row_type, "Désignation": ""})
+    set_plan_and_rerun(pd.DataFrame(rows))
 
 
 def move_row(df: pd.DataFrame, index: int, direction: int):
@@ -113,6 +122,18 @@ with tab_build:
     )
 
     current_plan = normalize_plan(plan)
+
+    st.markdown("**Ajouter rapidement une ligne**")
+    add_main, add_sub, add_ft = st.columns(3)
+    with add_main:
+        if st.button("+ Titre principal", use_container_width=True):
+            add_row(current_plan, "Titre principal")
+    with add_sub:
+        if st.button("+ Sous-titre", use_container_width=True):
+            add_row(current_plan, "Sous-titre")
+    with add_ft:
+        if st.button("+ FT", use_container_width=True):
+            add_row(current_plan, "FT")
 
     if len(current_plan):
         with st.expander("Réorganiser les lignes"):
@@ -342,19 +363,47 @@ with tab_library:
             status = st.empty()
             imported = []
             skipped = []
+            possible_duplicates = []
             failed = []
+            existing_sheets = list_sheets()
 
             for index, pdf in enumerate(uploads, start=1):
                 status.write(f"Import de **{pdf.name}** ({index}/{len(uploads)})...")
 
                 try:
                     metadata = detect_metadata(pdf.name, pdf.getvalue())
-                    save_sheet(metadata, pdf.name, pdf.getvalue())
-                    imported.append({
-                        "Fichier": pdf.name,
-                        "Produit détecté": metadata.get("product_name", ""),
-                        "Marque": metadata.get("brand", ""),
-                    })
+                    duplicate_level, duplicate_sheet, duplicate_reason = find_duplicate(
+                        metadata,
+                        pdf.name,
+                        existing_sheets,
+                    )
+
+                    if duplicate_level == "exact":
+                        skipped.append(
+                            {
+                                "Fichier": pdf.name,
+                                "Doublon de": duplicate_sheet.get("product_name", ""),
+                                "Raison": duplicate_reason,
+                            }
+                        )
+                    else:
+                        saved = save_sheet(metadata, pdf.name, pdf.getvalue())
+                        imported.append({
+                            "Fichier": pdf.name,
+                            "Produit détecté": metadata.get("product_name", ""),
+                            "Marque": metadata.get("brand", ""),
+                        })
+                        existing_sheets.append({
+                            **saved,
+                            "aliases": metadata.get("aliases") or [],
+                        })
+
+                        if duplicate_level == "probable":
+                            possible_duplicates.append({
+                                "Fichier importé": pdf.name,
+                                "Proche de": duplicate_sheet.get("product_name", ""),
+                                "Raison": duplicate_reason,
+                            })
                 except Exception as exc:
                     message = str(exc)
                     lower = message.lower()
@@ -386,11 +435,24 @@ with tab_library:
 
             if skipped:
                 st.info(
-                    f"{len(skipped)} fichier(s) déjà présent(s) ont été ignoré(s)."
+                    f"{len(skipped)} doublon(s) certain(s) ont été ignoré(s) automatiquement."
                 )
-                with st.expander("Voir les fichiers ignorés"):
-                    for name in skipped:
-                        st.write(name)
+                st.dataframe(
+                    pd.DataFrame(skipped),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+            if possible_duplicates:
+                st.warning(
+                    f"{len(possible_duplicates)} fiche(s) importée(s) ressemblent fortement "
+                    "à une fiche déjà présente. Elles n'ont pas été supprimées automatiquement."
+                )
+                st.dataframe(
+                    pd.DataFrame(possible_duplicates),
+                    hide_index=True,
+                    use_container_width=True,
+                )
 
             if failed:
                 st.warning(
