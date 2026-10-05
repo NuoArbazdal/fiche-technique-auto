@@ -57,8 +57,10 @@ function addRow(type, designation="", fontSize=null){
         <option value="28">28</option>
         <option value="32">32</option>
         <option value="36">36</option>
+        <option value="38">38</option>
         <option value="40">40</option>
         <option value="48">48</option>
+        <option value="55">55</option>
         <option value="72">72</option>
       </select>
     </div>
@@ -76,7 +78,7 @@ function addRow(type, designation="", fontSize=null){
     }else{
       sizeInput.disabled = false;
       if(!sizeInput.value){
-        sizeInput.value = currentType === "Titre principal" ? "40" : "27";
+        sizeInput.value = currentType === "Titre principal" ? "55" : "22";
       }
     }
   };
