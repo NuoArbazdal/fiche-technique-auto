@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import pandas as pd
 import streamlit as st
 from st_aggrid import AgGrid, GridOptionsBuilder, DataReturnMode, JsCode
@@ -34,22 +36,38 @@ def normalize_plan(df: pd.DataFrame) -> pd.DataFrame:
     return work[["Type", "Désignation"]].reset_index(drop=True)
 
 
+def ensure_plan_ids(df: pd.DataFrame) -> pd.DataFrame:
+    work = normalize_plan(df)
+    source = df.copy()
+
+    if "_id" in source.columns and len(source) == len(work):
+        ids = source["_id"].fillna("").astype(str).tolist()
+    else:
+        ids = [""] * len(work)
+
+    work["_id"] = [
+        value if value else uuid4().hex
+        for value in ids
+    ]
+    return work[["_id", "Type", "Désignation"]].reset_index(drop=True)
+
+
 def clear_results():
     st.session_state.pop("manual_results", None)
     st.session_state.pop("generated_pdf", None)
 
 
 def set_plan_and_rerun(df: pd.DataFrame):
-    st.session_state.manual_plan = normalize_plan(df)
+    st.session_state.manual_plan = ensure_plan_ids(df)
     st.session_state["manual_grid_version"] = st.session_state.get("manual_grid_version", 0) + 1
     clear_results()
     st.rerun()
 
 
 def add_row(df: pd.DataFrame, row_type: str):
-    work = normalize_plan(df)
+    work = ensure_plan_ids(df)
     rows = work.to_dict("records")
-    rows.append({"Type": row_type, "Désignation": ""})
+    rows.append({"_id": uuid4().hex, "Type": row_type, "Désignation": ""})
     set_plan_and_rerun(pd.DataFrame(rows))
 
 
@@ -71,20 +89,22 @@ with tab_build:
     )
 
     if "manual_plan" not in st.session_state:
-        st.session_state.manual_plan = pd.DataFrame(
-            [
-                {"Type": "Titre principal", "Désignation": ""},
-                {"Type": "Sous-titre", "Désignation": ""},
-                {"Type": "FT", "Désignation": ""},
-            ]
+        st.session_state.manual_plan = ensure_plan_ids(
+            pd.DataFrame(
+                [
+                    {"Type": "Titre principal", "Désignation": ""},
+                    {"Type": "Sous-titre", "Désignation": ""},
+                    {"Type": "FT", "Désignation": ""},
+                ]
+            )
         )
 
-    editor_df = normalize_plan(st.session_state.manual_plan).copy()
+    editor_df = ensure_plan_ids(st.session_state.manual_plan).copy()
     editor_df["_order"] = list(range(len(editor_df)))
-    editor_df["_delete"] = False
     editor_df["Supprimer"] = "🗑️"
 
     gb = GridOptionsBuilder.from_dataframe(editor_df)
+    gb.configure_column("_id", hide=True, editable=False)
     gb.configure_column(
         "Type",
         header_name="Type",
@@ -111,7 +131,7 @@ with tab_build:
     delete_click = JsCode("""
         function(params) {
             if (params.colDef.field === 'Supprimer') {
-                params.node.setDataValue('_delete', true);
+                params.node.setSelected(true, true);
             }
         }
     """)
@@ -123,6 +143,12 @@ with tab_build:
                 node.setDataValue('_order', i);
                 i += 1;
             });
+        }
+    """)
+
+    get_row_id = JsCode("""
+        function(params) {
+            return params.data._id;
         }
     """)
 
@@ -140,7 +166,6 @@ with tab_build:
         cellStyle={"cursor": "pointer", "textAlign": "center", "fontSize": "18px"},
     )
     gb.configure_column("_order", hide=True, editable=False)
-    gb.configure_column("_delete", hide=True, editable=False)
 
     gb.configure_grid_options(
         rowDragManaged=True,
@@ -148,8 +173,11 @@ with tab_build:
         animateRows=True,
         suppressMoveWhenRowDragging=False,
         stopEditingWhenCellsLoseFocus=True,
+        rowSelection="single",
+        suppressRowClickSelection=True,
         onCellClicked=delete_click,
         onRowDragEnd=row_drag_end,
+        getRowId=get_row_id,
     )
 
     if "manual_grid_version" not in st.session_state:
@@ -162,36 +190,45 @@ with tab_build:
         fit_columns_on_grid_load=False,
         allow_unsafe_jscode=True,
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-        update_on=["cellValueChanged", "rowDragEnd"],
+        update_on=["cellValueChanged", "rowDragEnd", "selectionChanged"],
         key=f"manual_plan_grid_{st.session_state.manual_grid_version}",
         theme="streamlit",
     )
 
     grid_data = pd.DataFrame(grid_response["data"])
-
-    if "_delete" not in grid_data.columns:
-        grid_data["_delete"] = False
     if "_order" not in grid_data.columns:
         grid_data["_order"] = list(range(len(grid_data)))
+    if "_id" not in grid_data.columns:
+        grid_data = ensure_plan_ids(grid_data)
+        grid_data["_order"] = list(range(len(grid_data)))
 
-    rows_to_delete = grid_data["_delete"].fillna(False).astype(bool)
-    if rows_to_delete.any():
-        cleaned = (
-            grid_data.loc[~rows_to_delete]
-            .sort_values("_order")
-            [["Type", "Désignation"]]
-            .reset_index(drop=True)
-        )
-        if cleaned.empty:
-            cleaned = pd.DataFrame([{"Type": "Titre principal", "Désignation": ""}])
-        set_plan_and_rerun(cleaned)
+    selected_rows = grid_response.get("selected_rows")
+    if selected_rows is not None:
+        selected_df = pd.DataFrame(selected_rows)
+        if not selected_df.empty and "_id" in selected_df.columns:
+            selected_id = str(selected_df.iloc[0]["_id"])
+            cleaned = (
+                grid_data.loc[grid_data["_id"].astype(str) != selected_id]
+                .sort_values("_order")
+                [["_id", "Type", "Désignation"]]
+                .reset_index(drop=True)
+            )
+            if cleaned.empty:
+                cleaned = ensure_plan_ids(
+                    pd.DataFrame([{"Type": "Titre principal", "Désignation": ""}])
+                )
+            set_plan_and_rerun(cleaned)
 
-    current_plan = normalize_plan(
-        grid_data.sort_values("_order")[["Type", "Désignation"]]
+    current_state = (
+        grid_data.sort_values("_order")
+        [["_id", "Type", "Désignation"]]
+        .reset_index(drop=True)
     )
+    current_plan = normalize_plan(current_state)
 
-    if not current_plan.equals(normalize_plan(st.session_state.manual_plan)):
-        st.session_state.manual_plan = current_plan.copy()
+    stored_state = ensure_plan_ids(st.session_state.manual_plan)
+    if not current_state.equals(stored_state):
+        st.session_state.manual_plan = current_state.copy()
         clear_results()
 
     st.caption(
