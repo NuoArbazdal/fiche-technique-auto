@@ -15,11 +15,14 @@ function getRows(){
     id: el.dataset.id,
     type: el.querySelector(".type").value,
     designation: el.querySelector(".designation").value,
+    font_size: el.querySelector(".font-size") && !el.querySelector(".font-size").disabled
+      ? Number(el.querySelector(".font-size").value) || null
+      : null,
     technical_sheet_id: sheetSelections.get(el.dataset.id) || null,
   }));
 }
 
-function addRow(type, designation=""){
+function addRow(type, designation="", fontSize=null){
   const row = document.createElement("div");
   row.className = "plan-row";
   row.dataset.id = uid();
@@ -36,12 +39,32 @@ function addRow(type, designation=""){
       </select>
     </div>
     <div><input class="designation" placeholder="Titre ou nom de la fiche technique"></div>
+    <div><input class="font-size" type="number" min="12" max="72" step="1" title="Taille du texte en points"></div>
     <div><button class="trash" title="Supprimer la ligne">🗑️</button></div>
   `;
 
   row.querySelector(".designation").value = designation;
 
+  const sizeInput = row.querySelector(".font-size");
+  const applyDefaultSize = () => {
+    const currentType = row.querySelector(".type").value;
+    if(currentType === "FT"){
+      sizeInput.value = "";
+      sizeInput.disabled = true;
+      sizeInput.placeholder = "—";
+    }else{
+      sizeInput.disabled = false;
+      if(!sizeInput.value){
+        sizeInput.value = currentType === "Titre principal" ? "40" : "27";
+      }
+    }
+  };
+  if(fontSize) sizeInput.value = String(fontSize);
+  applyDefaultSize();
+
   row.querySelector(".type").addEventListener("change", () => {
+    sizeInput.value = "";
+    applyDefaultSize();
     sheetSelections.delete(row.dataset.id);
     clearMatches();
   });
@@ -176,7 +199,10 @@ $("#generateBtn").addEventListener("click", async () => {
     body:JSON.stringify({
       filename:$("#pdfFilename").value,
       items:active.map(r => ({
-        type:r.type, designation:r.designation, technical_sheet_id:r.technical_sheet_id
+        type:r.type,
+        designation:r.designation,
+        font_size:r.font_size,
+        technical_sheet_id:r.technical_sheet_id
       }))
     })
   });
