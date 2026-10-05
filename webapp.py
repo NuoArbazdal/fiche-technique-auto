@@ -19,7 +19,7 @@ from services.pdf_builder import build_dossier_pdf
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 60 * 1024 * 1024
 
-APP_VERSION = "2026-10-05-table-reset-v2"
+APP_VERSION = "2026-10-05-title-size-v1"
 
 
 @app.after_request
@@ -145,6 +145,7 @@ def api_generate():
         {
             "Type": item.get("type"),
             "Désignation": item.get("designation") or "",
+            "font_size": item.get("font_size"),
             "technical_sheet_id": item.get("technical_sheet_id"),
         }
         for item in items
