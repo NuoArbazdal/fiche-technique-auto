@@ -39,7 +39,29 @@ function addRow(type, designation="", fontSize=null){
       </select>
     </div>
     <div><input class="designation" placeholder="Titre ou nom de la fiche technique"></div>
-    <div><input class="font-size" type="number" min="12" max="72" step="1" title="Taille du texte en points"></div>
+    <div>
+      <select class="font-size" title="Taille du texte en points, comme dans Word">
+        <option value="8">8</option>
+        <option value="9">9</option>
+        <option value="10">10</option>
+        <option value="11">11</option>
+        <option value="12">12</option>
+        <option value="14">14</option>
+        <option value="16">16</option>
+        <option value="18">18</option>
+        <option value="20">20</option>
+        <option value="22">22</option>
+        <option value="24">24</option>
+        <option value="26">26</option>
+        <option value="27">27</option>
+        <option value="28">28</option>
+        <option value="32">32</option>
+        <option value="36">36</option>
+        <option value="40">40</option>
+        <option value="48">48</option>
+        <option value="72">72</option>
+      </select>
+    </div>
     <div><button class="trash" title="Supprimer la ligne">🗑️</button></div>
   `;
 
@@ -49,9 +71,8 @@ function addRow(type, designation="", fontSize=null){
   const applyDefaultSize = () => {
     const currentType = row.querySelector(".type").value;
     if(currentType === "FT"){
-      sizeInput.value = "";
+      sizeInput.value = "12";
       sizeInput.disabled = true;
-      sizeInput.placeholder = "—";
     }else{
       sizeInput.disabled = false;
       if(!sizeInput.value){
