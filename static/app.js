@@ -2,100 +2,84 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 
-let rows = [];
 let matchData = [];
 let library = [];
+const sheetSelections = new Map();
 
-function newRow(type, designation=""){
-  return {id: uid(), type, designation, technical_sheet_id:null};
+function escapeHtml(value=""){
+  return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 }
 
-function syncRowsFromDom(){
-  const domRows = $("#rows .plan-row");
-  const byId = new Map(rows.map(r => [r.id, r]));
-
-  rows = domRows.map(el => {
-    const id = el.dataset.id;
-    const existing = byId.get(id) || newRow("FT");
-    existing.id = id;
-    existing.type = el.querySelector(".type").value;
-    existing.designation = el.querySelector(".designation").value;
-    return existing;
-  });
+function getRows(){
+  return $$("#rows .plan-row").map(el => ({
+    id: el.dataset.id,
+    type: el.querySelector(".type").value,
+    designation: el.querySelector(".designation").value,
+    technical_sheet_id: sheetSelections.get(el.dataset.id) || null,
+  }));
 }
 
-function buildRowElement(row){
-  const el = document.createElement("div");
-  el.className = "plan-row";
-  el.dataset.id = row.id;
-  el.innerHTML = `
-    <div class="drag">⋮⋮</div>
+function addRow(type, designation=""){
+  const row = document.createElement("div");
+  row.className = "plan-row";
+  row.dataset.id = uid();
+  row.innerHTML = `
+    <div class="row-actions">
+      <button class="move-up" title="Monter la ligne">↑</button>
+      <button class="move-down" title="Descendre la ligne">↓</button>
+    </div>
     <div>
       <select class="type">
-        <option ${row.type==="Titre principal"?"selected":""}>Titre principal</option>
-        <option ${row.type==="Sous-titre"?"selected":""}>Sous-titre</option>
-        <option ${row.type==="FT"?"selected":""}>FT</option>
+        <option ${type==="Titre principal"?"selected":""}>Titre principal</option>
+        <option ${type==="Sous-titre"?"selected":""}>Sous-titre</option>
+        <option ${type==="FT"?"selected":""}>FT</option>
       </select>
     </div>
     <div><input class="designation" placeholder="Titre ou nom de la fiche technique"></div>
-    <div><button class="trash" title="Supprimer">🗑️</button></div>
+    <div><button class="trash" title="Supprimer la ligne">🗑️</button></div>
   `;
 
-  el.querySelector(".designation").value = row.designation || "";
+  row.querySelector(".designation").value = designation;
 
-  el.querySelector(".type").addEventListener("change", e => {
-    row.type = e.target.value;
-    row.technical_sheet_id = null;
+  row.querySelector(".type").addEventListener("change", () => {
+    sheetSelections.delete(row.dataset.id);
+    clearMatches();
+  });
+  row.querySelector(".designation").addEventListener("input", () => {
+    sheetSelections.delete(row.dataset.id);
     clearMatches();
   });
 
-  el.querySelector(".designation").addEventListener("input", e => {
-    row.designation = e.target.value;
-    row.technical_sheet_id = null;
+  row.querySelector(".move-up").addEventListener("click", () => {
+    const prev = row.previousElementSibling;
+    if(prev){
+      row.parentElement.insertBefore(row, prev);
+      clearMatches();
+    }
+  });
+
+  row.querySelector(".move-down").addEventListener("click", () => {
+    const next = row.nextElementSibling;
+    if(next){
+      row.parentElement.insertBefore(next, row);
+      clearMatches();
+    }
+  });
+
+  row.querySelector(".trash").addEventListener("click", () => {
+    sheetSelections.delete(row.dataset.id);
+    row.remove();
     clearMatches();
   });
 
-  el.querySelector(".trash").addEventListener("click", () => {
-    syncRowsFromDom();
-    rows = rows.filter(r => r.id !== row.id);
-    el.remove();
-    clearMatches();
-  });
-
-  return el;
+  $("#rows").appendChild(row);
+  return row;
 }
 
-function renderRows(){
-  const box = $("#rows");
-  box.innerHTML = "";
-  for(const row of rows){
-    box.appendChild(buildRowElement(row));
-  }
-}
-
-function escapeHtml(value=""){
-  return value.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-}
-
-new Sortable($("#rows"), {
-  animation: 140,
-  handle: ".drag",
-  ghostClass: "sortable-ghost",
-  onStart: () => syncRowsFromDom(),
-  onEnd: () => {
-    syncRowsFromDom();
-    clearMatches();
-  }
-});
-
-$("[data-add]").forEach(btn => btn.addEventListener("click", () => {
-  syncRowsFromDom();
-  const row = newRow(btn.dataset.add);
-  rows.push(row);
-  const el = buildRowElement(row);
-  $("#rows").appendChild(el);
+$$("[data-add]").forEach(btn => btn.addEventListener("click", () => {
+  const row = addRow(btn.dataset.add);
   clearMatches();
-  el.querySelector(".designation").focus();
+  row.querySelector(".designation").focus();
 }));
 
 function clearMatches(){
@@ -105,8 +89,7 @@ function clearMatches(){
 }
 
 $("#searchBtn").addEventListener("click", async () => {
-  syncRowsFromDom();
-  const active = rows.filter(r => r.designation.trim());
+  const active = getRows().filter(r => r.designation.trim());
   if(!active.length){ alert("Ajoute au moins un titre ou une fiche technique."); return; }
   const res = await fetch("/api/match", {
     method:"POST", headers:{"Content-Type":"application/json"},
@@ -122,7 +105,7 @@ function renderMatches(){
   let unresolved = 0;
 
   for(const item of matchData){
-    const row = rows.find(r => r.id === item.id);
+    const row = getRows().find(r => r.id === item.id);
     if(!row) continue;
 
     if(item.type !== "FT"){
@@ -156,7 +139,10 @@ function renderMatches(){
         $("#searchBtn").click();
       });
     } else {
-      if(!row.technical_sheet_id) row.technical_sheet_id = candidates[0].id;
+      if(!row.technical_sheet_id){
+        sheetSelections.set(row.id, candidates[0].id);
+        row.technical_sheet_id = candidates[0].id;
+      }
       const selected = candidates.find(c => c.id === row.technical_sheet_id) || candidates[0];
       const cls = selected.score >= 90 ? "status-good" : "status-warn";
       d.innerHTML = `
@@ -169,7 +155,7 @@ function renderMatches(){
         <p class="${cls}">Correspondance : ${selected.score} %</p>
       `;
       d.querySelector(".candidateSelect").addEventListener("change", e => {
-        row.technical_sheet_id = e.target.value;
+        sheetSelections.set(row.id, e.target.value);
         renderMatches();
       });
     }
@@ -181,8 +167,7 @@ function renderMatches(){
 }
 
 $("#generateBtn").addEventListener("click", async () => {
-  syncRowsFromDom();
-  const active = rows.filter(r => r.designation.trim());
+  const active = getRows().filter(r => r.designation.trim());
   const unresolved = active.filter(r => r.type==="FT" && !r.technical_sheet_id);
   if(unresolved.length){ alert("Certaines FT ne sont pas encore associées."); return; }
 
@@ -313,10 +298,7 @@ $("#importFolderBtn").addEventListener("click", async()=>{
   await refreshLibrary();
 });
 
-// Base volontairement simple et locale au navigateur : aucun clic ne recharge la page.
-rows = [
-  newRow("Titre principal"),
-  newRow("Sous-titre"),
-  newRow("FT")
-];
-renderRows();
+// Tableau volontairement simple : le DOM est la source de vérité.
+addRow("Titre principal");
+addRow("Sous-titre");
+addRow("FT");
