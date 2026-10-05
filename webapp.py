@@ -19,7 +19,7 @@ from services.pdf_builder import build_dossier_pdf
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 60 * 1024 * 1024
 
-APP_VERSION = "2026-10-05-word-font-v2"
+APP_VERSION = "2026-10-05-word-size-reference-v3"
 
 
 @app.after_request
