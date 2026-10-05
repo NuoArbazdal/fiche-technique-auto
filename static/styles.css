@@ -16,7 +16,7 @@ header p,.hint{color:#727986}
 .tab-panel{display:none}
 .tab-panel.active{display:block}
 .plan-table{border:1px solid #d8dbe1;border-radius:8px;overflow:hidden;margin:18px 0}
-.plan-head,.plan-row{display:grid;grid-template-columns:46px 210px 1fr 54px;align-items:center}
+.plan-head,.plan-row{display:grid;grid-template-columns:70px 190px 1fr 82px 54px;align-items:center}
 .plan-head{background:#f7f8fa;color:#737986;font-size:13px;font-weight:600}
 .plan-head>div,.plan-row>div{padding:10px;border-right:1px solid #e3e5e8}
 .plan-head>div:last-child,.plan-row>div:last-child{border-right:0}
@@ -45,8 +45,11 @@ header p,.hint{color:#727986}
 .progress-line{margin:8px 0}
 @media(max-width:720px){
  .app-shell{padding:0 12px}
- .plan-head,.plan-row{grid-template-columns:36px 150px 1fr 44px}
+ .plan-head,.plan-row{grid-template-columns:62px 135px 1fr 68px 44px}
  .add-actions,.library-filters,.filename-row{grid-template-columns:1fr}
 }
 
 .app-version{margin-top:28px;color:#9aa0aa;font-size:12px;text-align:right}
+
+.font-size{text-align:center}
+.font-size:disabled{color:#9aa0aa}
