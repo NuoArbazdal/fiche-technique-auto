@@ -94,22 +94,7 @@ function addRow(type, designation="", fontSize=null){
   applySizeForType();
 
   sizeInput.addEventListener("change", () => {
-    const currentType = row.querySelector(".type").value;
-    if(currentType === "FT") return;
-
-    const newSize = Number(sizeInput.value);
-    if(currentType === "Titre principal"){
-      mainTitleSize = newSize;
-    }else{
-      subtitleSize = newSize;
-    }
-
-    $("#rows .plan-row").forEach(otherRow => {
-      if(otherRow.querySelector(".type").value === currentType){
-        otherRow.querySelector(".font-size").value = String(newSize);
-      }
-    });
-
+    // La taille choisie ne concerne que cette ligne.
     clearMatches();
   });
 
