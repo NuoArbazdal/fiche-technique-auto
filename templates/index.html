@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Fiches techniques</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v={{ app_version }}">
 </head>
 <body>
   <main class="app-shell">
@@ -68,8 +68,9 @@
       </div>
       <div id="libraryList"></div>
     </section>
+    <div class="app-version">Version : {{ app_version }}</div>
   </main>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v={{ app_version }}"></script>
 </body>
 </html>
