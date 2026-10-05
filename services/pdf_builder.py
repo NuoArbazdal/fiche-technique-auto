@@ -48,7 +48,7 @@ def _fit_title(text: str, base_size: float, min_size: float, max_width: float, c
     return font_name, min_size, _wrap_text(text, font_name, min_size, max_width, c)
 
 
-def create_title_page(title: str, title_type: str) -> bytes:
+def create_title_page(title: str, title_type: str, font_size_override=None) -> bytes:
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
@@ -62,13 +62,26 @@ def create_title_page(title: str, title_type: str) -> bytes:
     base_size = 40 if is_main else 27
     min_size = 23 if is_main else 18
 
-    font_name, font_size, lines = _fit_title(
-        display_text,
-        base_size=base_size,
-        min_size=min_size,
-        max_width=max_width,
-        c=c,
-    )
+    if font_size_override is not None:
+        try:
+            chosen_size = max(12, min(72, float(font_size_override)))
+        except (TypeError, ValueError):
+            chosen_size = None
+    else:
+        chosen_size = None
+
+    if chosen_size is not None:
+        font_name = "Helvetica"
+        font_size = chosen_size
+        lines = _wrap_text(display_text, font_name, font_size, max_width, c)
+    else:
+        font_name, font_size, lines = _fit_title(
+            display_text,
+            base_size=base_size,
+            min_size=min_size,
+            max_width=max_width,
+            c=c,
+        )
 
     c.setFillColorRGB(*BLUE)
     c.setStrokeColorRGB(*BLUE)
@@ -105,6 +118,7 @@ def build_dossier_pdf(items: list[dict]) -> bytes:
             page_pdf = create_title_page(
                 item.get("Désignation", ""),
                 item_type,
+                item.get("font_size"),
             )
             reader = PdfReader(BytesIO(page_pdf))
             for page in reader.pages:
