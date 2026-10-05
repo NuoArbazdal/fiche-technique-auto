@@ -48,3 +48,5 @@ header p,.hint{color:#727986}
  .plan-head,.plan-row{grid-template-columns:36px 150px 1fr 44px}
  .add-actions,.library-filters,.filename-row{grid-template-columns:1fr}
 }
+
+.app-version{margin-top:28px;color:#9aa0aa;font-size:12px;text-align:right}
