@@ -19,10 +19,20 @@ from services.pdf_builder import build_dossier_pdf
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 60 * 1024 * 1024
 
+APP_VERSION = "2026-10-05-table-reset-v2"
+
+
+@app.after_request
+def disable_cache(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", app_version=APP_VERSION)
 
 
 @app.get("/api/library")
