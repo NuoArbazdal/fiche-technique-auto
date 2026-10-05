@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Fiches techniques</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header>
+      <h1>Fiches techniques</h1>
+      <p>Créer un dossier à partir de fiches fabricants originales, sans les modifier.</p>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="builder">Créer un dossier</button>
+      <button class="tab" data-tab="library">Bibliothèque</button>
+    </nav>
+
+    <section id="builder" class="tab-panel active">
+      <h2>1. Saisir le contenu du dossier</h2>
+      <p>Ajoute les titres et les fiches techniques dans l'ordre souhaité.</p>
+
+      <div class="plan-table">
+        <div class="plan-head">
+          <div></div><div>Type</div><div>Titre ou nom de la fiche technique</div><div></div>
+        </div>
+        <div id="rows"></div>
+      </div>
+
+      <p class="hint">Saisis directement dans le tableau. Attrape ⋮⋮ pour déplacer une ligne. La corbeille la supprime immédiatement.</p>
+
+      <div class="add-actions">
+        <button data-add="Titre principal">+ Titre principal</button>
+        <button data-add="Sous-titre">+ Sous-titre</button>
+        <button data-add="FT">+ FT</button>
+      </div>
+
+      <button id="searchBtn" class="primary">Rechercher les fiches techniques</button>
+
+      <section id="matchesSection" class="hidden">
+        <h2>2. Vérifier les correspondances</h2>
+        <div id="matches"></div>
+        <div id="generateZone" class="hidden">
+          <h2>3. Générer le dossier PDF</h2>
+          <div class="filename-row">
+            <input id="pdfFilename" value="dossier_fiches_techniques.pdf">
+            <button id="generateBtn" class="primary">Générer et télécharger le PDF</button>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section id="library" class="tab-panel">
+      <h2>Importer un dossier de fiches techniques</h2>
+      <p>Sélectionne un dossier complet. Les PDF sont importés un par un pour éviter les gros envois qui bloquent.</p>
+      <input id="folderInput" type="file" accept=".pdf,application/pdf" webkitdirectory directory multiple>
+      <button id="importFolderBtn" class="primary">Importer le dossier</button>
+      <div id="importProgress"></div>
+
+      <hr>
+      <h2>Gérer la bibliothèque</h2>
+      <div class="library-filters">
+        <input id="librarySearch" placeholder="Nom, marque, référence...">
+        <select id="brandFilter"><option value="">Toutes les marques</option></select>
+        <select id="categoryFilter"><option value="">Toutes les catégories</option></select>
+      </div>
+      <div id="libraryList"></div>
+    </section>
+  </main>
+
+  <script src="/static/vendor/Sortable.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
