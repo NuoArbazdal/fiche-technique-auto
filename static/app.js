@@ -10,37 +10,66 @@ function newRow(type, designation=""){
   return {id: uid(), type, designation, technical_sheet_id:null};
 }
 
+function syncRowsFromDom(){
+  const domRows = $("#rows .plan-row");
+  const byId = new Map(rows.map(r => [r.id, r]));
+
+  rows = domRows.map(el => {
+    const id = el.dataset.id;
+    const existing = byId.get(id) || newRow("FT");
+    existing.id = id;
+    existing.type = el.querySelector(".type").value;
+    existing.designation = el.querySelector(".designation").value;
+    return existing;
+  });
+}
+
+function buildRowElement(row){
+  const el = document.createElement("div");
+  el.className = "plan-row";
+  el.dataset.id = row.id;
+  el.innerHTML = `
+    <div class="drag">⋮⋮</div>
+    <div>
+      <select class="type">
+        <option ${row.type==="Titre principal"?"selected":""}>Titre principal</option>
+        <option ${row.type==="Sous-titre"?"selected":""}>Sous-titre</option>
+        <option ${row.type==="FT"?"selected":""}>FT</option>
+      </select>
+    </div>
+    <div><input class="designation" placeholder="Titre ou nom de la fiche technique"></div>
+    <div><button class="trash" title="Supprimer">🗑️</button></div>
+  `;
+
+  el.querySelector(".designation").value = row.designation || "";
+
+  el.querySelector(".type").addEventListener("change", e => {
+    row.type = e.target.value;
+    row.technical_sheet_id = null;
+    clearMatches();
+  });
+
+  el.querySelector(".designation").addEventListener("input", e => {
+    row.designation = e.target.value;
+    row.technical_sheet_id = null;
+    clearMatches();
+  });
+
+  el.querySelector(".trash").addEventListener("click", () => {
+    syncRowsFromDom();
+    rows = rows.filter(r => r.id !== row.id);
+    el.remove();
+    clearMatches();
+  });
+
+  return el;
+}
+
 function renderRows(){
   const box = $("#rows");
   box.innerHTML = "";
   for(const row of rows){
-    const el = document.createElement("div");
-    el.className = "plan-row";
-    el.dataset.id = row.id;
-    el.innerHTML = `
-      <div class="drag">⋮⋮</div>
-      <div>
-        <select class="type">
-          <option ${row.type==="Titre principal"?"selected":""}>Titre principal</option>
-          <option ${row.type==="Sous-titre"?"selected":""}>Sous-titre</option>
-          <option ${row.type==="FT"?"selected":""}>FT</option>
-        </select>
-      </div>
-      <div><input class="designation" value="${escapeHtml(row.designation)}" placeholder="Titre ou nom de la fiche technique"></div>
-      <div><button class="trash" title="Supprimer">🗑️</button></div>
-    `;
-    el.querySelector(".type").addEventListener("change", e => {
-      row.type = e.target.value; row.technical_sheet_id = null; clearMatches();
-    });
-    el.querySelector(".designation").addEventListener("input", e => {
-      row.designation = e.target.value; row.technical_sheet_id = null; clearMatches();
-    });
-    el.querySelector(".trash").addEventListener("click", () => {
-      rows = rows.filter(r => r.id !== row.id);
-      renderRows();
-      clearMatches();
-    });
-    box.appendChild(el);
+    box.appendChild(buildRowElement(row));
   }
 }
 
@@ -52,19 +81,21 @@ new Sortable($("#rows"), {
   animation: 140,
   handle: ".drag",
   ghostClass: "sortable-ghost",
+  onStart: () => syncRowsFromDom(),
   onEnd: () => {
-    const order = $$("#rows .plan-row").map(el => el.dataset.id);
-    rows.sort((a,b) => order.indexOf(a.id)-order.indexOf(b.id));
+    syncRowsFromDom();
     clearMatches();
   }
 });
 
-$$("[data-add]").forEach(btn => btn.addEventListener("click", () => {
-  rows.push(newRow(btn.dataset.add));
-  renderRows();
+$("[data-add]").forEach(btn => btn.addEventListener("click", () => {
+  syncRowsFromDom();
+  const row = newRow(btn.dataset.add);
+  rows.push(row);
+  const el = buildRowElement(row);
+  $("#rows").appendChild(el);
   clearMatches();
-  const inputs = $$("#rows .designation");
-  if(inputs.length) inputs[inputs.length-1].focus();
+  el.querySelector(".designation").focus();
 }));
 
 function clearMatches(){
@@ -74,6 +105,7 @@ function clearMatches(){
 }
 
 $("#searchBtn").addEventListener("click", async () => {
+  syncRowsFromDom();
   const active = rows.filter(r => r.designation.trim());
   if(!active.length){ alert("Ajoute au moins un titre ou une fiche technique."); return; }
   const res = await fetch("/api/match", {
@@ -149,6 +181,7 @@ function renderMatches(){
 }
 
 $("#generateBtn").addEventListener("click", async () => {
+  syncRowsFromDom();
   const active = rows.filter(r => r.designation.trim());
   const unresolved = active.filter(r => r.type==="FT" && !r.technical_sheet_id);
   if(unresolved.length){ alert("Certaines FT ne sont pas encore associées."); return; }
