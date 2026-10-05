@@ -101,6 +101,7 @@ with tab_build:
 
     editor_df = ensure_plan_ids(st.session_state.manual_plan).copy()
     editor_df["_order"] = list(range(len(editor_df)))
+    editor_df["_delete_id"] = ""
     editor_df["Supprimer"] = "🗑️"
 
     gb = GridOptionsBuilder.from_dataframe(editor_df)
@@ -131,7 +132,7 @@ with tab_build:
     delete_click = JsCode("""
         function(params) {
             if (params.colDef.field === 'Supprimer') {
-                params.node.setSelected(true, true);
+                params.node.setDataValue('_delete_id', params.data._id);
             }
         }
     """)
@@ -166,6 +167,7 @@ with tab_build:
         cellStyle={"cursor": "pointer", "textAlign": "center", "fontSize": "18px"},
     )
     gb.configure_column("_order", hide=True, editable=False)
+    gb.configure_column("_delete_id", hide=True, editable=False)
 
     gb.configure_grid_options(
         rowDragManaged=True,
@@ -173,8 +175,6 @@ with tab_build:
         animateRows=True,
         suppressMoveWhenRowDragging=False,
         stopEditingWhenCellsLoseFocus=True,
-        rowSelection="single",
-        suppressRowClickSelection=True,
         onCellClicked=delete_click,
         onRowDragEnd=row_drag_end,
         getRowId=get_row_id,
@@ -190,7 +190,7 @@ with tab_build:
         fit_columns_on_grid_load=False,
         allow_unsafe_jscode=True,
         data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-        update_on=["cellValueChanged", "rowDragEnd", "selectionChanged"],
+        update_on=["cellValueChanged", "rowDragEnd"],
         key=f"manual_plan_grid_{st.session_state.manual_grid_version}",
         theme="streamlit",
     )
@@ -202,22 +202,26 @@ with tab_build:
         grid_data = ensure_plan_ids(grid_data)
         grid_data["_order"] = list(range(len(grid_data)))
 
-    selected_rows = grid_response.get("selected_rows")
-    if selected_rows is not None:
-        selected_df = pd.DataFrame(selected_rows)
-        if not selected_df.empty and "_id" in selected_df.columns:
-            selected_id = str(selected_df.iloc[0]["_id"])
-            cleaned = (
-                grid_data.loc[grid_data["_id"].astype(str) != selected_id]
-                .sort_values("_order")
-                [["_id", "Type", "Désignation"]]
-                .reset_index(drop=True)
+    if "_delete_id" not in grid_data.columns:
+        grid_data["_delete_id"] = ""
+
+    delete_ids = {
+        str(value)
+        for value in grid_data["_delete_id"].fillna("").tolist()
+        if str(value).strip()
+    }
+    if delete_ids:
+        cleaned = (
+            grid_data.loc[~grid_data["_id"].astype(str).isin(delete_ids)]
+            .sort_values("_order")
+            [["_id", "Type", "Désignation"]]
+            .reset_index(drop=True)
+        )
+        if cleaned.empty:
+            cleaned = ensure_plan_ids(
+                pd.DataFrame([{"Type": "Titre principal", "Désignation": ""}])
             )
-            if cleaned.empty:
-                cleaned = ensure_plan_ids(
-                    pd.DataFrame([{"Type": "Titre principal", "Désignation": ""}])
-                )
-            set_plan_and_rerun(cleaned)
+        set_plan_and_rerun(cleaned)
 
     current_state = (
         grid_data.sort_values("_order")
@@ -305,7 +309,7 @@ with tab_build:
                 results.append(item)
 
             st.session_state["manual_results"] = results
-            st.session_state["manual_plan"] = clean_plan[["Type", "Désignation"]]
+            st.session_state["manual_plan"] = ensure_plan_ids(clean_plan)
             st.session_state.pop("generated_pdf", None)
 
     if "manual_results" in st.session_state:
