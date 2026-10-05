@@ -1,13 +1,38 @@
 from io import BytesIO
+import os
 
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 from .library import download_sheet_pdf
 
 
 BLUE = (0.035, 0.16, 0.39)
+
+
+def _register_word_like_font() -> str:
+    candidates = [
+        ("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf", "LiberationSans"),
+        ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", "LiberationSans"),
+        ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "DejaVuSans"),
+    ]
+
+    for path, name in candidates:
+        if os.path.exists(path):
+            try:
+                if name not in pdfmetrics.getRegisteredFontNames():
+                    pdfmetrics.registerFont(TTFont(name, path))
+                return name
+            except Exception:
+                pass
+
+    return "Helvetica"
+
+
+WORD_LIKE_FONT = _register_word_like_font()
 
 
 def _text_width(text: str, font_name: str, font_size: float, c: canvas.Canvas) -> float:
@@ -33,7 +58,7 @@ def _wrap_text(text: str, font_name: str, font_size: float, max_width: float, c:
 
 
 def _fit_title(text: str, base_size: float, min_size: float, max_width: float, c: canvas.Canvas):
-    font_name = "Helvetica"
+    font_name = WORD_LIKE_FONT
     size = base_size
 
     while size > min_size:
@@ -71,7 +96,7 @@ def create_title_page(title: str, title_type: str, font_size_override=None) -> b
         chosen_size = None
 
     if chosen_size is not None:
-        font_name = "Helvetica"
+        font_name = WORD_LIKE_FONT
         font_size = chosen_size
         lines = _wrap_text(display_text, font_name, font_size, max_width, c)
     else:
