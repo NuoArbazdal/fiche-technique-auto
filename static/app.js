@@ -5,6 +5,8 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toStr
 let matchData = [];
 let library = [];
 const sheetSelections = new Map();
+let mainTitleSize = 55;
+let subtitleSize = 22;
 
 function escapeHtml(value=""){
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
@@ -70,24 +72,50 @@ function addRow(type, designation="", fontSize=null){
   row.querySelector(".designation").value = designation;
 
   const sizeInput = row.querySelector(".font-size");
-  const applyDefaultSize = () => {
+
+  const applySizeForType = () => {
     const currentType = row.querySelector(".type").value;
     if(currentType === "FT"){
       sizeInput.value = "12";
       sizeInput.disabled = true;
+      return;
+    }
+
+    sizeInput.disabled = false;
+    if(fontSize !== null && fontSize !== undefined){
+      sizeInput.value = String(fontSize);
     }else{
-      sizeInput.disabled = false;
-      if(!sizeInput.value){
-        sizeInput.value = currentType === "Titre principal" ? "55" : "22";
-      }
+      sizeInput.value = currentType === "Titre principal"
+        ? String(mainTitleSize)
+        : String(subtitleSize);
     }
   };
-  if(fontSize) sizeInput.value = String(fontSize);
-  applyDefaultSize();
+
+  applySizeForType();
+
+  sizeInput.addEventListener("change", () => {
+    const currentType = row.querySelector(".type").value;
+    if(currentType === "FT") return;
+
+    const newSize = Number(sizeInput.value);
+    if(currentType === "Titre principal"){
+      mainTitleSize = newSize;
+    }else{
+      subtitleSize = newSize;
+    }
+
+    $("#rows .plan-row").forEach(otherRow => {
+      if(otherRow.querySelector(".type").value === currentType){
+        otherRow.querySelector(".font-size").value = String(newSize);
+      }
+    });
+
+    clearMatches();
+  });
 
   row.querySelector(".type").addEventListener("change", () => {
-    sizeInput.value = "";
-    applyDefaultSize();
+    fontSize = null;
+    applySizeForType();
     sheetSelections.delete(row.dataset.id);
     clearMatches();
   });
