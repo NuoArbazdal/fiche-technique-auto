@@ -25,6 +25,13 @@ function getRows(){
   }));
 }
 
+function setDraftStatus(text, isError=false){
+  const status = $("#draftStatus");
+  if(!status) return;
+  status.textContent = text;
+  status.classList.toggle("error", isError);
+}
+
 function saveDraft(){
   try{
     const draft = {
@@ -32,16 +39,29 @@ function saveDraft(){
       filename: $("#pdfFilename") ? $("#pdfFilename").value : "dossier_fiches_techniques.pdf",
       saved_at: new Date().toISOString()
     };
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    const serialized = JSON.stringify(draft);
+    localStorage.setItem(DRAFT_KEY, serialized);
+
+    // Vérification immédiate : on s'assure que le navigateur a réellement conservé le brouillon.
+    if(localStorage.getItem(DRAFT_KEY) !== serialized){
+      throw new Error("Échec de vérification du stockage local");
+    }
+
+    setDraftStatus("Sauvegardé");
+    return true;
   }catch(e){
-    // La sauvegarde locale ne doit jamais bloquer l'utilisation du site.
+    setDraftStatus("Sauvegarde impossible", true);
+    return false;
   }
 }
 
 function loadDraft(){
   try{
     const raw = localStorage.getItem(DRAFT_KEY);
-    if(!raw) return false;
+    if(!raw){
+      setDraftStatus("Aucun brouillon");
+      return false;
+    }
 
     const draft = JSON.parse(raw);
     if(!draft || !Array.isArray(draft.rows) || !draft.rows.length) return false;
@@ -62,8 +82,10 @@ function loadDraft(){
     if($("#pdfFilename") && draft.filename){
       $("#pdfFilename").value = draft.filename;
     }
+    setDraftStatus("Brouillon restauré");
     return true;
   }catch(e){
+    setDraftStatus("Brouillon illisible", true);
     return false;
   }
 }
@@ -305,6 +327,11 @@ if($("#pdfFilename")){
   $("#pdfFilename").addEventListener("input", saveDraft);
 }
 window.addEventListener("beforeunload", saveDraft);
+window.addEventListener("pagehide", saveDraft);
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "hidden") saveDraft();
+});
+setInterval(saveDraft, 2000);
 
 // Tabs
 $$(".tab").forEach(tab => tab.addEventListener("click", () => {
