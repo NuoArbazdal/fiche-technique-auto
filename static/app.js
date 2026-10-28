@@ -7,6 +7,7 @@ let library = [];
 const sheetSelections = new Map();
 let mainTitleSize = 55;
 let subtitleSize = 22;
+const DRAFT_KEY = "fiche-technique-auto-draft-v1";
 
 function escapeHtml(value=""){
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
@@ -24,10 +25,57 @@ function getRows(){
   }));
 }
 
-function addRow(type, designation="", fontSize=null){
+function saveDraft(){
+  try{
+    const draft = {
+      rows: getRows(),
+      filename: $("#pdfFilename") ? $("#pdfFilename").value : "dossier_fiches_techniques.pdf",
+      saved_at: new Date().toISOString()
+    };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  }catch(e){
+    // La sauvegarde locale ne doit jamais bloquer l'utilisation du site.
+  }
+}
+
+function loadDraft(){
+  try{
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if(!raw) return false;
+
+    const draft = JSON.parse(raw);
+    if(!draft || !Array.isArray(draft.rows) || !draft.rows.length) return false;
+
+    $("#rows").innerHTML = "";
+    sheetSelections.clear();
+
+    for(const saved of draft.rows){
+      addRow(
+        saved.type || "FT",
+        saved.designation || "",
+        saved.font_size,
+        saved.id || null,
+        saved.technical_sheet_id || null
+      );
+    }
+
+    if($("#pdfFilename") && draft.filename){
+      $("#pdfFilename").value = draft.filename;
+    }
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
+
+function addRow(type, designation="", fontSize=null, savedId=null, technicalSheetId=null){
   const row = document.createElement("div");
   row.className = "plan-row";
-  row.dataset.id = uid();
+  row.dataset.id = savedId || uid();
+  if(technicalSheetId){
+    sheetSelections.set(row.dataset.id, technicalSheetId);
+  }
   row.innerHTML = `
     <div class="row-actions">
       <button class="move-up" title="Monter la ligne">↑</button>
@@ -142,6 +190,7 @@ $$("[data-add]").forEach(btn => btn.addEventListener("click", () => {
 }));
 
 function clearMatches(){
+  saveDraft();
   matchData = [];
   $("#matchesSection").classList.add("hidden");
   $("#generateZone").classList.add("hidden");
@@ -215,6 +264,7 @@ function renderMatches(){
       `;
       d.querySelector(".candidateSelect").addEventListener("change", e => {
         sheetSelections.set(row.id, e.target.value);
+        saveDraft();
         renderMatches();
       });
     }
@@ -250,6 +300,11 @@ $("#generateBtn").addEventListener("click", async () => {
   a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 });
+
+if($("#pdfFilename")){
+  $("#pdfFilename").addEventListener("input", saveDraft);
+}
+window.addEventListener("beforeunload", saveDraft);
 
 // Tabs
 $$(".tab").forEach(tab => tab.addEventListener("click", () => {
@@ -360,7 +415,10 @@ $("#importFolderBtn").addEventListener("click", async()=>{
   await refreshLibrary();
 });
 
-// Tableau volontairement simple : le DOM est la source de vérité.
-addRow("Titre principal");
-addRow("Sous-titre");
-addRow("FT");
+// Restaure automatiquement le travail précédent de ce navigateur.
+if(!loadDraft()){
+  addRow("Titre principal");
+  addRow("Sous-titre");
+  addRow("FT");
+  saveDraft();
+}
