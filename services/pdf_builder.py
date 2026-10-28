@@ -1,7 +1,7 @@
 from io import BytesIO
 import os
 
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfReader, PdfWriter, PageObject, Transformation
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -33,6 +33,37 @@ def _register_word_like_font() -> str:
 
 
 WORD_LIKE_FONT = _register_word_like_font()
+
+def normalize_pdf_page_to_a4(page):
+    a4_width, a4_height = A4
+
+    # Intègre proprement une éventuelle rotation avant le redimensionnement.
+    if getattr(page, "rotation", 0):
+        try:
+            page.transfer_rotation_to_content()
+        except Exception:
+            pass
+
+    src_width = float(page.mediabox.width)
+    src_height = float(page.mediabox.height)
+
+    if src_width <= 0 or src_height <= 0:
+        return page
+
+    # Conserve les proportions de la fiche fabricant et la centre sur une page A4.
+    scale = min(a4_width / src_width, a4_height / src_height)
+    rendered_width = src_width * scale
+    rendered_height = src_height * scale
+    tx = (a4_width - rendered_width) / 2
+    ty = (a4_height - rendered_height) / 2
+
+    target = PageObject.create_blank_page(width=a4_width, height=a4_height)
+    target.merge_transformed_page(
+        page,
+        Transformation().scale(scale).translate(tx, ty),
+    )
+    return target
+
 
 
 def _text_width(text: str, font_name: str, font_size: float, c: canvas.Canvas) -> float:
@@ -160,10 +191,10 @@ def build_dossier_pdf(items: list[dict]) -> bytes:
             pdf_bytes = download_sheet_pdf(sheet_id)
             reader = PdfReader(BytesIO(pdf_bytes))
 
-            # Les pages de la fiche fabricant sont reprises directement.
-            # Aucun contenu n'est redessiné, recadré ou recréé.
+            # Toutes les fiches sont normalisées en A4 pour garantir
+            # un format identique dans tout le dossier final.
             for page in reader.pages:
-                writer.add_page(page)
+                writer.add_page(normalize_pdf_page_to_a4(page))
 
     output = BytesIO()
     writer.write(output)
