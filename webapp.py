@@ -32,7 +32,7 @@ def disable_cache(response):
 
 @app.get("/")
 def index():
-    return render_template("index.html", app_version=APP_VERSION)
+    return render_template("index.html", app_version=APP_VERSION, hub_url="https://etude-app.fr")
 
 
 @app.get("/api/library")
