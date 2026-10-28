@@ -53,3 +53,6 @@ header p,.hint{color:#727986}
 
 .font-size{text-align:center;width:100%}
 .font-size:disabled{color:#9aa0aa}
+
+.draft-status{margin-left:8px;color:#18864b;font-size:13px}
+.draft-status.error{color:#b3261e}
