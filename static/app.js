@@ -8,6 +8,7 @@ const sheetSelections = new Map();
 let mainTitleSize = 55;
 let subtitleSize = 22;
 const DRAFT_KEY = "fiche-technique-auto-draft-v1";
+let draggedPlanRow = null;
 
 function escapeHtml(value=""){
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
@@ -100,6 +101,7 @@ function addRow(type, designation="", fontSize=null, savedId=null, technicalShee
   }
   row.innerHTML = `
     <div class="row-actions">
+      <button class="drag-handle" draggable="true" title="Déplacer la ligne" style="cursor:grab">⋮⋮</button>
       <button class="move-up" title="Monter la ligne">↑</button>
       <button class="move-down" title="Descendre la ligne">↓</button>
     </div>
@@ -176,6 +178,44 @@ function addRow(type, designation="", fontSize=null, savedId=null, technicalShee
   });
   row.querySelector(".designation").addEventListener("input", () => {
     sheetSelections.delete(row.dataset.id);
+    clearMatches();
+  });
+
+  const dragHandle = row.querySelector(".drag-handle");
+
+  dragHandle.addEventListener("dragstart", e => {
+    draggedPlanRow = row;
+    row.style.opacity = "0.55";
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", row.dataset.id);
+  });
+
+  row.addEventListener("dragover", e => {
+    if(!draggedPlanRow || draggedPlanRow === row) return;
+
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+
+    const rect = row.getBoundingClientRect();
+    const placeAfter = e.clientY > rect.top + rect.height / 2;
+    const parent = row.parentElement;
+
+    if(placeAfter){
+      parent.insertBefore(draggedPlanRow, row.nextSibling);
+    }else{
+      parent.insertBefore(draggedPlanRow, row);
+    }
+  });
+
+  row.addEventListener("drop", e => {
+    e.preventDefault();
+  });
+
+  dragHandle.addEventListener("dragend", () => {
+    if(draggedPlanRow){
+      draggedPlanRow.style.opacity = "";
+    }
+    draggedPlanRow = null;
     clearMatches();
   });
 
