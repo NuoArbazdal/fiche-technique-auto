@@ -457,6 +457,36 @@ function renderLibrary(){
 
 ["librarySearch","brandFilter","categoryFilter"].forEach(id=>$("#"+id).addEventListener("input",renderLibrary));
 
+$("#importSinglePdfBtn").addEventListener("click", async()=>{
+  const file=$("#singlePdfInput").files[0];
+  if(!file){alert("Sélectionne un PDF.");return;}
+  const progress=$("#importProgress");
+  progress.innerHTML="";
+  const line=document.createElement("div");
+  line.className="progress-line";
+  line.textContent=file.name+"...";
+  progress.prepend(line);
+
+  const form=new FormData();
+  form.append("file",file);
+
+  try{
+    const r=await fetch("/api/library/import-one",{method:"POST",body:form});
+    const result=await r.json();
+    if(!r.ok) throw new Error(result.error||"Erreur");
+    if(result.status==="duplicate"){
+      line.textContent=file.name+" — déjà présent dans la bibliothèque";
+    }else{
+      line.textContent=file.name+" — importé";
+      $("#singlePdfInput").value="";
+    }
+    await refreshLibrary();
+  }catch(e){
+    line.textContent=file.name+" — erreur d'import";
+    alert(e.message||"Import impossible.");
+  }
+});
+
 $("#importFolderBtn").addEventListener("click", async()=>{
   const files=Array.from($("#folderInput").files).filter(f=>f.name.toLowerCase().endsWith(".pdf"));
   if(!files.length){alert("Sélectionne un dossier contenant des PDF.");return;}
