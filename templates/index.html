@@ -53,10 +53,16 @@
     </section>
 
     <section id="library" class="tab-panel">
-      <h2>Importer un dossier de fiches techniques</h2>
-      <p>Sélectionne un dossier complet. Les PDF sont importés un par un pour éviter les gros envois qui bloquent.</p>
+      <h2>Importer des fiches techniques</h2>
+      <p>Ajoute un seul PDF ou sélectionne un dossier complet.</p>
+
+      <input id="singlePdfInput" type="file" accept=".pdf,application/pdf">
+      <button id="importSinglePdfBtn" class="secondary">Importer un PDF</button>
+
+      <hr>
+
       <input id="folderInput" type="file" accept=".pdf,application/pdf" webkitdirectory directory multiple>
-      <button id="importFolderBtn" class="primary">Importer le dossier</button>
+      <button id="importFolderBtn" class="primary">Importer un dossier complet</button>
       <div id="importProgress"></div>
 
       <hr>
